@@ -26,8 +26,18 @@ class Settings(BaseSettings):
     # HMAC secret Agora signs webhook payloads with (Agora-Signature-V2).
     agora_webhook_secret: str = ""
 
+    # LLM_PROVIDER selects which provider app/services/llm_factory.py
+    # constructs clients for — "anthropic" (default, used in production)
+    # or "gemini" (free-tier-friendly, for development). Anthropic's own
+    # config below is untouched; Gemini gets its own key/model pair since
+    # llm_model's default ("claude-sonnet-5") would be meaningless to Gemini.
+    llm_provider: str = "anthropic"
+
     llm_api_key: str = ""
     llm_model: str = "claude-sonnet-5"
+
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
 
     slack_bot_token: str = ""
     slack_channel_id: str = ""

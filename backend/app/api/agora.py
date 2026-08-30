@@ -45,17 +45,20 @@ from app.services.agora.schemas import (
 from app.services.agora.session_service import end_session, start_session
 from app.services.agora.token import AgoraTokenBuilder, TokenBuildError, TokenBuilder
 from app.services.agora.webhook import WebhookVerificationError, parse_envelope, verify_signature
-from app.services.contradiction.llm_client import AnthropicContradictionClient
 from app.services.contradiction.llm_client import LLMCallError as ContradictionLLMCallError
 from app.services.contradiction.service import ContradictionEngine
-from app.services.extraction.llm_client import AnthropicExtractionClient
 from app.services.extraction.llm_client import LLMCallError as ExtractionLLMCallError
 from app.services.extraction.service import ExtractionService
 from app.services.incident_state.dependency import get_incident_state_service
 from app.services.incident_state.service import IncidentStateService
-from app.services.information_gaps.llm_client import AnthropicGapAssessmentClient
 from app.services.information_gaps.llm_client import LLMCallError as GapLLMCallError
 from app.services.information_gaps.service import GapEngine
+from app.services.llm_factory import (
+    UnsupportedProviderError,
+    build_contradiction_client,
+    build_extraction_client,
+    build_gap_assessment_client,
+)
 
 logger = logging.getLogger("agora")
 
@@ -70,28 +73,31 @@ router = APIRouter(tags=["agora"])
 # in code. A getter that raises HTTPException(503) here would short-circuit
 # the response before verify_signature ever ran, turning a forged/unsigned
 # request into a 503 that leaks our LLM config state instead of a 401 —
-# this was a real bug caught by this slice's own HTTP smoke test.
+# this was a real bug caught by this slice's own HTTP smoke test. Catching
+# UnsupportedProviderError here too (not just *LLMCallError) matters for
+# the exact same reason: a misconfigured LLM_PROVIDER must degrade the same
+# way an unconfigured key does, not raise past this point.
 def get_optional_extraction_service() -> Optional[ExtractionService]:
     settings = get_settings()
     try:
-        return ExtractionService(AnthropicExtractionClient(settings.llm_api_key, settings.llm_model))
-    except ExtractionLLMCallError:
+        return ExtractionService(build_extraction_client(settings))
+    except (ExtractionLLMCallError, UnsupportedProviderError):
         return None
 
 
 def get_optional_contradiction_engine() -> Optional[ContradictionEngine]:
     settings = get_settings()
     try:
-        return ContradictionEngine(AnthropicContradictionClient(settings.llm_api_key, settings.llm_model))
-    except ContradictionLLMCallError:
+        return ContradictionEngine(build_contradiction_client(settings))
+    except (ContradictionLLMCallError, UnsupportedProviderError):
         return None
 
 
 def get_optional_gap_engine() -> Optional[GapEngine]:
     settings = get_settings()
     try:
-        return GapEngine(AnthropicGapAssessmentClient(settings.llm_api_key, settings.llm_model))
-    except GapLLMCallError:
+        return GapEngine(build_gap_assessment_client(settings))
+    except (GapLLMCallError, UnsupportedProviderError):
         return None
 
 

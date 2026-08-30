@@ -12,18 +12,22 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.config import get_settings
 from app.repositories.incident_repository import IncidentNotFoundError
 from app.schemas.conversation_schemas import AddUtteranceRequest
-from app.services.contradiction.llm_client import AnthropicContradictionClient
 from app.services.contradiction.llm_client import LLMCallError as ContradictionLLMCallError
 from app.services.contradiction.service import ContradictionEngine
 from app.services.extraction.context import build_extraction_context
-from app.services.extraction.llm_client import AnthropicExtractionClient, LLMCallError
+from app.services.extraction.llm_client import LLMCallError
 from app.services.extraction.pipeline import ExtractionApplyResult, apply_extraction
 from app.services.extraction.service import ExtractionService
 from app.services.incident_state.dependency import get_incident_state_service
 from app.services.incident_state.service import IncidentStateService
-from app.services.information_gaps.llm_client import AnthropicGapAssessmentClient
 from app.services.information_gaps.llm_client import LLMCallError as GapLLMCallError
 from app.services.information_gaps.service import GapEngine
+from app.services.llm_factory import (
+    UnsupportedProviderError,
+    build_contradiction_client,
+    build_extraction_client,
+    build_gap_assessment_client,
+)
 
 router = APIRouter(prefix="/incidents", tags=["conversation"])
 
@@ -31,8 +35,8 @@ router = APIRouter(prefix="/incidents", tags=["conversation"])
 def get_extraction_service() -> ExtractionService:
     settings = get_settings()
     try:
-        client = AnthropicExtractionClient(settings.llm_api_key, settings.llm_model)
-    except LLMCallError as e:
+        client = build_extraction_client(settings)
+    except (LLMCallError, UnsupportedProviderError) as e:
         raise HTTPException(status_code=503, detail=f"Extraction unavailable: {e}") from e
     return ExtractionService(client)
 
@@ -40,8 +44,8 @@ def get_extraction_service() -> ExtractionService:
 def get_contradiction_engine() -> ContradictionEngine:
     settings = get_settings()
     try:
-        client = AnthropicContradictionClient(settings.llm_api_key, settings.llm_model)
-    except ContradictionLLMCallError as e:
+        client = build_contradiction_client(settings)
+    except (ContradictionLLMCallError, UnsupportedProviderError) as e:
         raise HTTPException(status_code=503, detail=f"Contradiction engine unavailable: {e}") from e
     return ContradictionEngine(client)
 
@@ -49,8 +53,8 @@ def get_contradiction_engine() -> ContradictionEngine:
 def get_gap_engine() -> GapEngine:
     settings = get_settings()
     try:
-        client = AnthropicGapAssessmentClient(settings.llm_api_key, settings.llm_model)
-    except GapLLMCallError as e:
+        client = build_gap_assessment_client(settings)
+    except (GapLLMCallError, UnsupportedProviderError) as e:
         raise HTTPException(status_code=503, detail=f"Gap engine unavailable: {e}") from e
     return GapEngine(client)
 

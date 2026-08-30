@@ -102,6 +102,29 @@ Implemented:
   `services/api.ts` was mapped from the real route files, nothing invented.
   `frontend/demo.html` (a single-file, dependency-free fallback built for
   the live demo) is kept alongside it untouched. See **Frontend** below.
+- **Provider-agnostic LLM selection** — `LLM_PROVIDER=anthropic` (default)
+  or `gemini`, so development doesn't require paid Anthropic usage. See
+  **`docs/GEMINI_PROVIDER.md`** for the verified `google-genai` SDK
+  contract (confirmed by installing the package and inspecting the real
+  types directly, not just reading docs — one doc fetch during this work
+  returned a plausible but wrong API shape, caught by that inspection).
+  `app/services/llm_factory.py` is the only new indirection: 9 FastAPI
+  dependency-provider functions that used to construct
+  `Anthropic*Client(...)` directly now call `build_extraction_client(settings)`
+  /`build_contradiction_client(settings)`/`build_gap_assessment_client(settings)`.
+  `IncidentStateService`, `ExtractionService`, `ContradictionEngine`,
+  `GapEngine`, the Pydantic schemas, and the extraction pipeline are all
+  unchanged — both providers' clients satisfy the exact same Protocols
+  those already depended on. Fixed a real dependency conflict this
+  surfaced: `google-genai` requires `httpx>=0.28`/`pydantic>=2.12.5`,
+  and `httpx==0.28.1` broke the *existing* pinned `anthropic==0.34.2`
+  client at construction time — caught only because the new factory
+  tests were the first in the suite to construct a real Anthropic client
+  object. Fixed by bumping `anthropic` to `0.125.0` (same `0.x` line,
+  chosen over the new `1.x` major to minimize risk) and `pydantic` to
+  `2.12.5` (same v2 major); full suite re-verified after both bumps.
+  **The real Gemini API has not been called** — see that doc's closing
+  section for the manual verification procedure.
 
 Not yet implemented: voice summaries, backend-driven demo replay mode
 (start/pause/resume/reset). These land in subsequent slices per the
@@ -125,22 +148,30 @@ cd backend
 pytest -v
 ```
 
-95/95 tests pass, covering everything above plus (Agora): event
-normalization (deterministic dedup-friendly IDs for webhook history
-entries, spec-shaped live-relay events), speaker identity mapping (unseen
-uid → new UNKNOWN-role participant, same uid → same participant, human
-correction/role-confidence rules unchanged), deduplication (live relay
-event_id, webhook noticeId, and webhook history redelivery), the agent's
-own speech never being run through extraction, malformed webhook bodies
-(400) and bad/missing signatures (401) rejected before any other
-processing, unassociated events (unknown agent_id/channel) accepted with
-200 but ignored rather than erroring, session create/end including
-graceful failure when the Agora REST call or token minting fails,
-extraction-unavailable webhook history still preserving every raw event,
-and a full chain test driving conflict detection + action ownership +
-the Slack approval gate entirely through the Agora live-relay endpoint
-instead of manually-posted utterances — proving Agora is genuinely just
-another utterance source into the unmodified reasoning pipeline.
+121/121 tests pass, covering everything above plus:
+
+- (Agora) event normalization (deterministic dedup-friendly IDs for
+  webhook history entries, spec-shaped live-relay events), speaker
+  identity mapping (unseen uid → new UNKNOWN-role participant, same uid →
+  same participant, human correction/role-confidence rules unchanged),
+  deduplication (live relay event_id, webhook noticeId, and webhook
+  history redelivery), the agent's own speech never being run through
+  extraction, malformed webhook bodies (400) and bad/missing signatures
+  (401) rejected before any other processing, unassociated events
+  (unknown agent_id/channel) accepted with 200 but ignored rather than
+  erroring, session create/end including graceful failure when the Agora
+  REST call or token minting fails, extraction-unavailable webhook
+  history still preserving every raw event, and a full chain test driving
+  conflict detection + action ownership + the Slack approval gate
+  entirely through the Agora live-relay endpoint instead of
+  manually-posted utterances.
+- (Gemini/factory) the Gemini clients' response parsing (function-call
+  args returned, API errors mapped to the existing `LLMCallError`, no/
+  wrong function call raises), `ExtractionService`'s retry-then-degrade
+  behavior proven unchanged when Gemini is the provider underneath (not
+  just the raw client), and the factory tests proving
+  `LLM_PROVIDER=anthropic`/`gemini` each construct the correct client
+  class (and an unsupported provider name raises cleanly).
 
 A real HTTP smoke test against a live `uvicorn` process caught a genuine
 bug the unit tests missed (calling the route function directly doesn't
