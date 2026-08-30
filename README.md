@@ -68,10 +68,35 @@ Implemented:
   lock was tightened this slice to allow `FAILED → EXECUTING` (retry)
   while still permanently blocking re-execution after `SUCCEEDED` or a
   concurrent double-call while `EXECUTING`.
+- **Agora Integration** (P0 #6/slice 6) — `backend/app/services/agora/` +
+  `backend/app/api/agora.py`. See **`docs/AGORA_INTEGRATION.md`** for the
+  verified API contract and an important architectural finding: Agora's
+  real-time transcript delivery is a client-SDK (RTM) mechanism, not
+  something a bare backend can subscribe to — the backend's own webhook
+  only gets the full transcript once, at session end. This integration
+  handles both paths honestly: `POST /incidents/{id}/agora/transcript-events`
+  (live per-utterance ingestion for a thin client/RTM relay to call) and
+  `POST /agora/webhook` (server-to-server lifecycle + end-of-session
+  transcript, signature-verified, at-least-once-delivery-safe). Both feed
+  the *exact same* extraction → contradiction → gap → state pipeline the
+  manual `/utterances` endpoint uses — Agora is just another utterance
+  source, not a parallel reasoning path. Session start/end goes through
+  the real `/join`/`/leave` Conversational AI REST endpoints and mints RTC
+  tokens; speaker identity is never assumed to equal an Agora uid (an
+  unseen uid becomes a new `UNKNOWN`-role participant, same as any other
+  low-confidence role recognition already built). Every event is
+  deduplicated (webhook `noticeId` + a deterministic per-utterance
+  `event_id`) so redelivery can never double-create a fact/action/
+  timeline entry.
 
-Not yet implemented: Agora integration, voice summaries, frontend, demo
-replay mode. These land in subsequent slices per the priority order in the
-spec.
+  **Not yet done:** the real Agora smoke test (live project, live room,
+  two real speakers) — there is no live Agora project or client available
+  in this environment. Everything up to the mocked-boundary level is
+  tested and verified; §10 of the integration doc is the manual procedure
+  to actually run it against a real Agora account.
+
+Not yet implemented: voice summaries, frontend, demo replay mode. These
+land in subsequent slices per the priority order in the spec.
 
 ## Backend
 
@@ -91,24 +116,44 @@ cd backend
 pytest -v
 ```
 
-63/63 tests pass, covering everything above plus: the message composer
-(confirmed facts, unconfirmed vs. confirmed root cause, open action count,
-critical gaps), the `SlackWebClient` error-mapping boundary (bad token,
-API error, not-ok response, success), and the full propose → approve →
-execute HTTP flow — including execution rejected with `409` when not yet
-approved or after rejection, a failed Slack call recorded as `FAILED` with
-the real error and successfully retried afterward, and a `409` on any
-attempt to execute a second time after a `SUCCEEDED` result. Also verified
-booting as a real `uvicorn` process (not just via in-process TestClient)
-and hit over actual HTTP.
+95/95 tests pass, covering everything above plus (Agora): event
+normalization (deterministic dedup-friendly IDs for webhook history
+entries, spec-shaped live-relay events), speaker identity mapping (unseen
+uid → new UNKNOWN-role participant, same uid → same participant, human
+correction/role-confidence rules unchanged), deduplication (live relay
+event_id, webhook noticeId, and webhook history redelivery), the agent's
+own speech never being run through extraction, malformed webhook bodies
+(400) and bad/missing signatures (401) rejected before any other
+processing, unassociated events (unknown agent_id/channel) accepted with
+200 but ignored rather than erroring, session create/end including
+graceful failure when the Agora REST call or token minting fails,
+extraction-unavailable webhook history still preserving every raw event,
+and a full chain test driving conflict detection + action ownership +
+the Slack approval gate entirely through the Agora live-relay endpoint
+instead of manually-posted utterances — proving Agora is genuinely just
+another utterance source into the unmodified reasoning pipeline.
+
+A real HTTP smoke test against a live `uvicorn` process caught a genuine
+bug the unit tests missed (calling the route function directly doesn't
+exercise FastAPI's actual dependency-resolution order): an unsigned Agora
+webhook request was returning a misleading `503` about LLM configuration
+instead of `401 Unauthorized`, because the extraction-service dependency
+was resolved before the signature check ran. Fixed — see
+`docs/AGORA_INTEGRATION.md` §5. **The real Agora smoke test (live project,
+live room, real speech) has not been run** — no live Agora credentials or
+client are available in this environment; see that doc's §10 for the
+manual procedure.
 
 Extraction/contradiction/gap tests all run against fake LLM clients at the
 same interfaces the real Anthropic clients implement (`LLMExtractionClient`,
 `ContradictionLLMClient`, `GapAssessmentLLMClient`); Slack tests run
 against a fake at the `SlackClient` interface the real `SlackWebClient`
-implements. All deterministic, no API key or Slack workspace needed. The
-real integrations are exercised by hand via `LLM_API_KEY` /
-`SLACK_BOT_TOKEN` / `SLACK_CHANNEL_ID` once configured — endpoints return a
-clean `503` if they aren't.
+implements; Agora tests run against fakes at the `AgoraConversationalAIClient`
+and `TokenBuilder` interfaces. All deterministic, no API key, Slack
+workspace, or Agora project needed. The real integrations are exercised by
+hand via `LLM_API_KEY` / `SLACK_BOT_TOKEN` / `SLACK_CHANNEL_ID` /
+`AGORA_APP_ID` / `AGORA_APP_CERTIFICATE` / `AGORA_CUSTOMER_KEY` /
+`AGORA_CUSTOMER_SECRET` / `AGORA_WEBHOOK_SECRET` once configured —
+endpoints return a clean `503` if they aren't.
 
 API is browsable at `http://127.0.0.1:8000/docs` once running.

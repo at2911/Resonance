@@ -54,6 +54,11 @@ class Participant(BaseModel):
     role: ParticipantRole = ParticipantRole.UNKNOWN
     role_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     joined_at: datetime = Field(default_factory=utcnow)
+    agora_uid: Optional[str] = None
+    """Set when this participant was identified via an Agora conversation
+    (app/services/agora/identity.py) — never assumed equal to the
+    Participant id itself. None for participants added manually.
+    """
 
 
 class Claim(BaseModel):

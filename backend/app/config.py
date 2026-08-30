@@ -16,6 +16,15 @@ class Settings(BaseSettings):
 
     agora_app_id: str = ""
     agora_app_certificate: str = ""
+    # REST API (Conversational AI Engine) auth is Basic Auth with a
+    # customer key/secret pair — distinct from app_id/app_certificate,
+    # which sign RTC tokens for clients joining the channel. See
+    # docs/AGORA_INTEGRATION.md §2.
+    agora_customer_key: str = ""
+    agora_customer_secret: str = ""
+    agora_rest_base_url: str = "https://api.agora.io/api/conversational-ai-agent/v2"
+    # HMAC secret Agora signs webhook payloads with (Agora-Signature-V2).
+    agora_webhook_secret: str = ""
 
     llm_api_key: str = ""
     llm_model: str = "claude-sonnet-5"

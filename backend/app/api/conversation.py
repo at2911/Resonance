@@ -1,10 +1,8 @@
-"""Entry point for turning one utterance into incident state.
-
-This stands in for the Agora Conversation Gateway for now: later, Agora
-transcript events will call the same extract -> apply_extraction pipeline
-per utterance instead of an HTTP request. Keeping that pipeline in
-app/services/extraction/ rather than inline here means the Agora slice only
-has to produce ExtractionContext objects, not duplicate any of this logic.
+"""Entry point for turning one manually-posted utterance into incident
+state. The Agora pipeline (app/services/agora/pipeline.py) feeds the exact
+same extract -> apply_extraction call via the same
+build_extraction_context helper (app/services/extraction/context.py) —
+Agora is just another utterance source, not a different reasoning path.
 """
 
 from __future__ import annotations
@@ -17,9 +15,9 @@ from app.schemas.conversation_schemas import AddUtteranceRequest
 from app.services.contradiction.llm_client import AnthropicContradictionClient
 from app.services.contradiction.llm_client import LLMCallError as ContradictionLLMCallError
 from app.services.contradiction.service import ContradictionEngine
+from app.services.extraction.context import build_extraction_context
 from app.services.extraction.llm_client import AnthropicExtractionClient, LLMCallError
 from app.services.extraction.pipeline import ExtractionApplyResult, apply_extraction
-from app.services.extraction.schemas import ExtractionContext, RecentActionContext, RecentClaimContext
 from app.services.extraction.service import ExtractionService
 from app.services.incident_state.dependency import get_incident_state_service
 from app.services.incident_state.service import IncidentStateService
@@ -28,9 +26,6 @@ from app.services.information_gaps.llm_client import LLMCallError as GapLLMCallE
 from app.services.information_gaps.service import GapEngine
 
 router = APIRouter(prefix="/incidents", tags=["conversation"])
-
-RECENT_CLAIMS_WINDOW = 10
-OPEN_ACTION_STATUSES = ("OPEN", "IN_PROGRESS", "BLOCKED")
 
 
 def get_extraction_service() -> ExtractionService:
@@ -74,30 +69,7 @@ def process_utterance(
     except IncidentNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
 
-    speaker_role = None
-    if req.speaker_id and req.speaker_id in incident.participants:
-        speaker_role = incident.participants[req.speaker_id].role
-
-    recent_claims = [
-        RecentClaimContext(id=c.id, type=c.type, status=c.status, normalized_claim=c.normalized_claim)
-        for c in list(incident.claims.values())[-RECENT_CLAIMS_WINDOW:]
-    ]
-    recent_actions = [
-        RecentActionContext(id=a.id, description=a.description, owner=a.owner, status=a.status.value)
-        for a in incident.actions.values()
-        if a.status.value in OPEN_ACTION_STATUSES
-    ]
-
-    context = ExtractionContext(
-        incident_title=incident.title,
-        speaker_id=req.speaker_id,
-        speaker_name=req.speaker_name,
-        speaker_role=speaker_role,
-        utterance_text=req.text,
-        recent_claims=recent_claims,
-        recent_actions=recent_actions,
-    )
-
+    context = build_extraction_context(incident, req.speaker_id, req.speaker_name, req.text)
     extraction = extraction_service.extract(context)
     return apply_extraction(
         state_service, incident_id, context, extraction, contradiction_engine, gap_engine

@@ -193,6 +193,17 @@ class IncidentStateService:
                 self._repo.save(incident)
             return participant
 
+    def set_participant_agora_uid(
+        self, incident_id: str, participant_id: str, agora_uid: str
+    ) -> Participant:
+        with self._lock:
+            incident = self._repo.get(incident_id)
+            participant = self._require(incident.participants, participant_id, "participant")
+            participant.agora_uid = agora_uid
+            self._touch(incident)
+            self._repo.save(incident)
+            return participant
+
     # ------------------------------------------------------------------
     # Claims (facts / hypotheses / decisions / questions / risks / updates)
     # ------------------------------------------------------------------
@@ -643,6 +654,26 @@ class IncidentStateService:
             self._touch(incident)
             self._repo.save(incident)
             return ea
+
+    # ------------------------------------------------------------------
+    # Generic lifecycle/audit timeline notes (Agora session/agent
+    # lifecycle, and anything else that's audit-worthy but doesn't map to
+    # a specific domain entity like a Claim or Action)
+    # ------------------------------------------------------------------
+
+    def add_timeline_note(
+        self,
+        incident_id: str,
+        event_type: TimelineEventType,
+        content: str,
+        speaker: Optional[str] = None,
+    ) -> TimelineEvent:
+        with self._lock:
+            incident = self._repo.get(incident_id)
+            event = self._emit(incident, event_type, content=content, speaker=speaker)
+            self._touch(incident)
+            self._repo.save(incident)
+            return event
 
     # ------------------------------------------------------------------
     # Clarity score
