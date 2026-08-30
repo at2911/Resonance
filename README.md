@@ -95,8 +95,17 @@ Implemented:
   tested and verified; §10 of the integration doc is the manual procedure
   to actually run it against a real Agora account.
 
-Not yet implemented: voice summaries, frontend, demo replay mode. These
-land in subsequent slices per the priority order in the spec.
+- **Frontend Dashboard** — `frontend/` (React + TypeScript + Vite). Real
+  components (`IncidentHeader`, `Timeline`, `ClaimCard`, `ConflictCard`,
+  `ActionCard`, `EvidencePanel`, `ApprovalModal`, `ClarityScore`,
+  `InformationGaps`) talking to the actual backend API — every function in
+  `services/api.ts` was mapped from the real route files, nothing invented.
+  `frontend/demo.html` (a single-file, dependency-free fallback built for
+  the live demo) is kept alongside it untouched. See **Frontend** below.
+
+Not yet implemented: voice summaries, backend-driven demo replay mode
+(start/pause/resume/reset). These land in subsequent slices per the
+priority order in the spec.
 
 ## Backend
 
@@ -157,3 +166,35 @@ hand via `LLM_API_KEY` / `SLACK_BOT_TOKEN` / `SLACK_CHANNEL_ID` /
 endpoints return a clean `503` if they aren't.
 
 API is browsable at `http://127.0.0.1:8000/docs` once running.
+
+## Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev       # http://localhost:5173, expects the backend on :8000
+```
+
+Talks directly to the backend (CORS is open for local dev) — no proxy
+config needed. Override the backend URL with `VITE_API_BASE_URL` if it's
+not on `http://127.0.0.1:8000`.
+
+Run tests / type-check / build:
+
+```bash
+npm run test      # 21/21 — component tests plus a full propose -> approve
+                   # -> execute -> reject flow against a stateful mock of
+                   # the API layer
+npm run build      # tsc -b && vite build
+npm run lint
+```
+
+Manually verified end-to-end with headless Chromium against the real,
+running backend (not mocked): incident creation, the dashboard rendering
+real facts/hypotheses/conflicts/actions/gaps/timeline, the evidence
+provenance toggle, and a Slack-unconfigured proposal producing a graceful
+error banner instead of a crash. Zero browser console errors.
+
+`frontend/demo.html` remains as a dependency-free fallback — open it
+directly in a browser (no `npm install` needed) if the real frontend can't
+run for some reason.
