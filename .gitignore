@@ -18,3 +18,7 @@ dist/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Local dev tooling (downloaded ad hoc, not part of the project)
+backend/cloudflared.exe
+backend/cloudflared.log

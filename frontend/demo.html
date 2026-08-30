@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dangling Pointers — Incident Commander</title>
+<style>
+  :root {
+    --bg: #0b0f14; --panel: #121822; --panel2: #0e141d; --border: #1f2a38;
+    --text: #e6edf3; --dim: #8b98a9; --accent: #4da3ff;
+    --fact: #2ecc71; --hyp: #f1c40f; --decision: #9b59b6; --action: #4da3ff;
+    --risk: #e67e22; --conflict: #e74c3c; --critical: #ff5555;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family: -apple-system, Segoe UI, Roboto, sans-serif; font-size:14px; }
+  header { display:flex; align-items:center; gap:16px; padding:14px 20px; background:var(--panel); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:10; flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; }
+  .badge { padding:3px 10px; border-radius:12px; font-size:11px; font-weight:600; letter-spacing:.3px; }
+  .sev1 { background:#4a1414; color:#ff8080; } .sev-unknown { background:#333; color:#aaa; }
+  .status-ACTIVE { background:#1b3a1b; color:#5fd15f; }
+  .status-MITIGATING { background:#3a2f14; color:#e0b84a; }
+  .clarity-wrap { margin-left:auto; display:flex; align-items:center; gap:10px; }
+  .clarity-num { font-size:22px; font-weight:700; }
+  .btn { background:var(--accent); color:#04101c; border:none; padding:8px 14px; border-radius:6px; font-weight:600; cursor:pointer; font-size:13px; }
+  .btn:hover { filter:brightness(1.1); } .btn:disabled { opacity:.4; cursor:not-allowed; }
+  .btn.secondary { background:#243040; color:var(--text); }
+  .btn.reject { background:#3a1c1c; color:#ff8080; }
+  .btn.small { padding:4px 10px; font-size:12px; }
+  main { display:grid; grid-template-columns: 1.1fr 1fr; gap:16px; padding:16px 20px; max-width:1500px; margin:0 auto; }
+  .col { display:flex; flex-direction:column; gap:16px; min-width:0; }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+  .panel h2 { font-size:12px; text-transform:uppercase; letter-spacing:.6px; color:var(--dim); margin:0; padding:10px 14px; border-bottom:1px solid var(--border); background:var(--panel2); }
+  .panel .body { padding:10px 14px; max-height:340px; overflow-y:auto; }
+  .empty { color:var(--dim); font-style:italic; padding:8px 0; }
+  .timeline-item { display:flex; gap:10px; padding:7px 0; border-bottom:1px dashed var(--border); font-size:12.5px; }
+  .timeline-item:last-child { border-bottom:none; }
+  .timeline-time { color:var(--dim); white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .timeline-type { font-weight:700; }
+  .card { border:1px solid var(--border); border-radius:8px; padding:9px 11px; margin-bottom:8px; background:var(--panel2); }
+  .card:last-child{ margin-bottom:0; }
+  .card-top { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:4px; }
+  .tag { font-size:10px; font-weight:700; text-transform:uppercase; padding:2px 7px; border-radius:4px; letter-spacing:.4px; }
+  .tag-FACT{background:#12331f;color:var(--fact)} .tag-HYPOTHESIS{background:#332c0f;color:var(--hyp)}
+  .tag-DECISION{background:#2a1733;color:var(--decision)} .tag-ACTION{background:#0f2333;color:var(--action)}
+  .tag-RISK{background:#331f0f;color:var(--risk)} .tag-QUESTION{background:#1a2733;color:#7fb0d9}
+  .status-chip { font-size:10px; padding:2px 7px; border-radius:4px; background:#1c2836; color:var(--dim); }
+  .status-chip.DISPUTED, .status-chip.OPEN.conflict { background:#3a1c1c; color:#ff8080; }
+  .status-chip.CONFIRMED { background:#12331f; color:var(--fact); }
+  .claim-text { line-height:1.4; }
+  .evidence { color:var(--dim); font-size:11.5px; margin-top:4px; }
+  .conflict-card { border-left:3px solid var(--conflict); }
+  .gap-critical { border-left:3px solid var(--critical); }
+  .gap-normal { border-left:3px solid #555; }
+  .clarity-bars { display:flex; gap:4px; font-size:11px; color:var(--dim); flex-wrap:wrap; }
+  .approval-box { border:1px solid var(--accent); border-radius:8px; padding:12px; margin-top:8px; background:#0f1a2b; }
+  .approval-box .msg { white-space:pre-line; background:#0b1420; padding:8px; border-radius:6px; margin:8px 0; font-size:12.5px; }
+  #log { position:fixed; bottom:0; left:0; right:0; background:#000; color:#7fdc7f; font-family:monospace; font-size:11px; padding:6px 14px; max-height:70px; overflow-y:auto; border-top:1px solid var(--border); }
+  .owner { color:var(--accent); font-weight:600; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🛰 Dangling Pointers</h1>
+  <span id="inc-title" style="font-weight:600"></span>
+  <span id="inc-sev" class="badge"></span>
+  <span id="inc-status" class="badge"></span>
+  <button class="btn secondary" id="btn-create">New Incident</button>
+  <button class="btn" id="btn-demo" disabled>▶ Run Demo Scenario</button>
+  <button class="btn secondary" id="btn-slack" disabled>Propose Slack Update</button>
+  <div class="clarity-wrap">
+    <div>
+      <div class="clarity-num" id="clarity-num">—</div>
+      <div class="clarity-bars" id="clarity-breakdown"></div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="col">
+    <div class="panel">
+      <h2>Live Timeline</h2>
+      <div class="body" id="timeline"><div class="empty">No incident yet — click "New Incident".</div></div>
+    </div>
+    <div class="panel">
+      <h2>Conflicts</h2>
+      <div class="body" id="conflicts"><div class="empty">None detected.</div></div>
+    </div>
+    <div class="panel">
+      <h2>Information Gaps</h2>
+      <div class="body" id="gaps"><div class="empty">None flagged.</div></div>
+    </div>
+    <div class="panel" id="approval-panel" style="display:none">
+      <h2>Human Approval Gate</h2>
+      <div class="body" id="approval-body"></div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="panel">
+      <h2>Facts / Hypotheses / Decisions</h2>
+      <div class="body" id="claims"><div class="empty">Nothing established yet.</div></div>
+    </div>
+    <div class="panel">
+      <h2>Actions</h2>
+      <div class="body" id="actions"><div class="empty">No actions assigned.</div></div>
+    </div>
+    <div class="panel">
+      <h2>Root Cause / Final Summary</h2>
+      <div class="body" id="summary"><div class="empty">Root cause: not yet assessed.</div></div>
+    </div>
+  </div>
+</main>
+
+<div id="log">Ready.</div>
+
+<script>
+const API = "http://127.0.0.1:8000";
+let incidentId = null;
+let participants = {};
+let claimIds = {};
+let poll = null;
+
+function log(msg) {
+  const el = document.getElementById("log");
+  const t = new Date().toLocaleTimeString();
+  el.innerHTML = `[${t}] ${msg}<br>` + el.innerHTML;
+}
+
+async function api(method, path, body) {
+  const res = await fetch(API + path, {
+    method, headers: {"Content-Type":"application/json"},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok) { log(`⚠ ${method} ${path} -> ${res.status}: ${data.detail||JSON.stringify(data)}`); }
+  return {ok: res.ok, status: res.status, data};
+}
+
+function fmtTime(ts) {
+  return new Date(ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+}
+
+function esc(s) { return (s||"").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+
+async function refresh() {
+  if (!incidentId) return;
+  const inc = await api("GET", `/incidents/${incidentId}`);
+  if (!inc.ok) return;
+  const clarity = await api("GET", `/incidents/${incidentId}/clarity`);
+  const summary = await api("GET", `/incidents/${incidentId}/summary`);
+  render(inc.data, clarity.data, summary.data);
+}
+
+function render(inc, clarity, summary) {
+  document.getElementById("inc-title").textContent = inc.title;
+  const sev = document.getElementById("inc-sev");
+  sev.textContent = inc.severity; sev.className = "badge sev1";
+  const st = document.getElementById("inc-status");
+  st.textContent = inc.status; st.className = "badge status-" + inc.status;
+
+  document.getElementById("clarity-num").textContent = (clarity.score ?? "—") + (clarity.score!=null ? "%" : "");
+  if (clarity.score != null) {
+    document.getElementById("clarity-breakdown").innerHTML =
+      `${clarity.confirmed_facts} facts · ${clarity.unresolved_hypotheses} hyp · ` +
+      `${clarity.open_conflicts} conflicts · ${clarity.critical_information_gaps} crit gaps · ` +
+      `${clarity.unowned_open_actions} unowned actions`;
+  }
+
+  // Timeline
+  const tl = [...inc.timeline].reverse();
+  document.getElementById("timeline").innerHTML = tl.length ? tl.map(e => `
+    <div class="timeline-item">
+      <span class="timeline-time">${fmtTime(e.timestamp)}</span>
+      <span><span class="timeline-type">${e.event_type.replace(/_/g," ")}</span> — ${esc(e.content)}</span>
+    </div>`).join("") : `<div class="empty">No events yet.</div>`;
+
+  // Claims (FACT / HYPOTHESIS / DECISION / QUESTION / UPDATE)
+  const claims = Object.values(inc.claims).filter(c => c.type !== "ACTION" && c.type !== "RISK")
+    .sort((a,b)=> new Date(a.timestamp)-new Date(b.timestamp));
+  document.getElementById("claims").innerHTML = claims.length ? claims.map(c => `
+    <div class="card">
+      <div class="card-top">
+        <span class="tag tag-${c.type}">${c.type}</span>
+        <span class="status-chip ${c.status}">${c.status}</span>
+      </div>
+      <div class="claim-text">${esc(c.normalized_claim)}</div>
+      ${c.evidence ? `<div class="evidence">Evidence: ${esc(c.evidence)}</div>` : ""}
+      <div class="evidence">confidence ${(c.confidence*100).toFixed(0)}%${c.speaker_id && participants[c.speaker_id] ? " · " + esc(participants[c.speaker_id]) : ""}</div>
+    </div>`).join("") : `<div class="empty">Nothing established yet.</div>`;
+
+  // Conflicts
+  const conflicts = Object.values(inc.conflicts);
+  document.getElementById("conflicts").innerHTML = conflicts.length ? conflicts.map(c => `
+    <div class="card conflict-card">
+      <div class="card-top">
+        <span class="tag" style="background:#3a1c1c;color:#ff8080">${c.conflict_type}</span>
+        <span class="status-chip">${c.status}</span>
+      </div>
+      <div>${esc(c.explanation)}</div>
+    </div>`).join("") : `<div class="empty">None detected.</div>`;
+
+  // Gaps
+  const gaps = Object.values(inc.information_gaps).filter(g => g.status === "OPEN");
+  document.getElementById("gaps").innerHTML = gaps.length ? gaps.map(g => `
+    <div class="card ${g.importance === 'CRITICAL' ? 'gap-critical' : 'gap-normal'}">
+      <span class="tag" style="background:${g.importance==='CRITICAL'?'#3a1c1c':'#222'};color:${g.importance==='CRITICAL'?'#ff8080':'#aaa'}">${g.importance}</span>
+      ${esc(g.description)}
+    </div>`).join("") : `<div class="empty">None flagged.</div>`;
+
+  // Actions
+  const actions = Object.values(inc.actions);
+  document.getElementById("actions").innerHTML = actions.length ? actions.map(a => `
+    <div class="card">
+      <div class="card-top">
+        <span class="tag tag-ACTION">ACTION</span>
+        <span class="status-chip">${a.status}</span>
+      </div>
+      <div>${esc(a.description)}</div>
+      <div class="evidence">Owner: <span class="owner">${esc(a.owner||"UNASSIGNED")}</span> · priority ${a.priority}</div>
+    </div>`).join("") : `<div class="empty">No actions assigned.</div>`;
+
+  // Summary
+  document.getElementById("summary").innerHTML = `
+    <div style="font-weight:700; margin-bottom:8px; color:${summary.root_cause_confirmed ? 'var(--fact)':'var(--critical)'}">
+      ${esc(summary.root_cause_statement || "")}
+    </div>
+    <div class="evidence">${(summary.confirmed_facts||[]).length} confirmed facts · ${(summary.hypotheses||[]).length} hypotheses ·
+    ${(summary.decisions||[]).length} decisions · ${(summary.conflicts||[]).length} conflicts ·
+    ${(summary.unresolved_risks||[]).length} unresolved risks</div>`;
+}
+
+async function createIncident() {
+  clearInterval(poll);
+  const r = await api("POST", "/incidents", {title: "Payment API Outage", severity: "SEV1"});
+  if (!r.ok) return;
+  incidentId = r.data.id;
+  participants = {}; claimIds = {};
+  log(`Incident created: ${incidentId}`);
+  document.getElementById("btn-demo").disabled = false;
+  document.getElementById("btn-slack").disabled = false;
+  document.getElementById("approval-panel").style.display = "none";
+  await refresh();
+  poll = setInterval(refresh, 1200);
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function runDemo() {
+  document.getElementById("btn-demo").disabled = true;
+  log("▶ Running scripted demo scenario (Payment API outage)...");
+
+  async function addParticipant(name, role) {
+    const r = await api("POST", `/incidents/${incidentId}/participants`, {name, role, role_confidence: 0.9});
+    participants[r.data.id] = name;
+    return r.data.id;
+  }
+  async function addClaim(text, type, status, confidence, speaker, evidence, entities) {
+    const r = await api("POST", `/incidents/${incidentId}/claims`, {
+      text, normalized_claim: text, type, status, confidence,
+      speaker_id: speaker || null, evidence: evidence || null, entities: entities || []
+    });
+    await refresh(); await sleep(700);
+    return r.data.id;
+  }
+
+  const alice = await addParticipant("Alice", "BACKEND_ENGINEER");
+  const bob = await addParticipant("Bob", "SRE");
+  const priya = await addParticipant("Priya", "INCIDENT_COMMANDER");
+  await refresh(); await sleep(500);
+
+  const fact1 = await addClaim("Payment API is returning 503 errors", "FACT", "CONFIRMED", 0.97, alice, "Alice checked the payment dashboard");
+  const fact2 = await addClaim("Deployment to payment-service went out at 10:40", "FACT", "CONFIRMED", 0.9, priya, "Priya confirmed via deploy log", ["deployment"]);
+  const hyp1 = await addClaim("Database connection pool may be exhausted", "HYPOTHESIS", "UNCONFIRMED", 0.55, alice, null, ["database"]);
+  const hyp2 = await addClaim("Database appears healthy; network is dropping packets", "HYPOTHESIS", "UNCONFIRMED", 0.6, bob, null, ["database","network"]);
+
+  log("⚠ Conflict detected: DB health hypotheses disagree");
+  await api("POST", `/incidents/${incidentId}/conflicts`, {
+    claim_a: hyp1, claim_b: hyp2, conflict_type: "DATABASE_HEALTH",
+    explanation: "Alice reports possible DB exhaustion while Bob reports the DB is healthy and blames the network"
+  });
+  await refresh(); await sleep(700);
+
+  await api("POST", `/incidents/${incidentId}/gaps`, {description: "Customer impact unknown", importance: "CRITICAL"});
+  await refresh(); await sleep(400);
+  await api("POST", `/incidents/${incidentId}/gaps`, {description: "Rollback status unknown", importance: "CRITICAL"});
+  await refresh(); await sleep(700);
+
+  log("Action assigned to Bob: check network metrics");
+  await api("POST", `/incidents/${incidentId}/actions`, {
+    description: "Check network metrics", owner: "Bob", owner_confidence: 0.9, priority: "HIGH"
+  });
+  await refresh(); await sleep(700);
+
+  await addClaim("Team agreed to prepare a rollback if root cause isn't confirmed within 10 minutes", "DECISION", "CONFIRMED", 0.95, priya, "Explicit team agreement");
+
+  log("✅ Demo scenario complete — root cause remains unconfirmed by design.");
+  document.getElementById("btn-demo").disabled = false;
+}
+
+async function proposeSlack() {
+  const r = await api("POST", `/incidents/${incidentId}/slack-updates`);
+  if (!r.ok) {
+    document.getElementById("approval-panel").style.display = "block";
+    document.getElementById("approval-body").innerHTML =
+      `<div class="empty">Slack not configured in this environment (${r.data.detail||'503'}). ` +
+      `The proposal message would have been composed here; approval gate would apply exactly as shown below.</div>`;
+    return;
+  }
+  const ea = r.data;
+  document.getElementById("approval-panel").style.display = "block";
+  renderApproval(ea);
+}
+
+function renderApproval(ea) {
+  document.getElementById("approval-body").innerHTML = `
+    <div class="approval-box">
+      <div><strong>Destination:</strong> ${esc(ea.payload.channel)}</div>
+      <div class="msg">${esc(ea.payload.text)}</div>
+      <div style="margin-bottom:8px">Status: <span class="status-chip">${ea.approval_status}</span> ${ea.execution_status ? `/ ${ea.execution_status}` : ""}</div>
+      ${ea.approval_status === "PENDING" ? `
+        <button class="btn reject" id="btn-reject">Reject</button>
+        <button class="btn" id="btn-approve">Approve &amp; Post</button>` : ""}
+      ${ea.approval_status === "APPROVED" && ea.execution_status !== "SUCCEEDED" ? `<button class="btn" id="btn-execute">Execute</button>` : ""}
+      ${ea.execution_result ? `<div class="evidence" style="margin-top:8px">${esc(ea.execution_result)}</div>` : ""}
+    </div>`;
+  const approveBtn = document.getElementById("btn-approve");
+  const rejectBtn = document.getElementById("btn-reject");
+  const execBtn = document.getElementById("btn-execute");
+  if (approveBtn) approveBtn.onclick = async () => {
+    const r = await api("POST", `/incidents/${incidentId}/external-actions/${ea.id}/decision`, {approved:true, approved_by:"ic-priya"});
+    if (r.ok) { log("Human approved Slack update."); await executeEA(r.data); }
+  };
+  if (rejectBtn) rejectBtn.onclick = async () => {
+    const r = await api("POST", `/incidents/${incidentId}/external-actions/${ea.id}/decision`, {approved:false, approved_by:"ic-priya"});
+    if (r.ok) { log("Human rejected Slack update."); renderApproval(r.data); }
+  };
+  if (execBtn) execBtn.onclick = () => executeEA(ea);
+}
+
+async function executeEA(ea) {
+  const r = await api("POST", `/incidents/${incidentId}/external-actions/${ea.id}/execute`);
+  if (r.ok) {
+    log(r.data.execution_status === "SUCCEEDED" ? "✅ Slack message posted." : `Slack execution: ${r.data.execution_status}`);
+    renderApproval(r.data);
+  }
+}
+
+document.getElementById("btn-create").onclick = createIncident;
+document.getElementById("btn-demo").onclick = runDemo;
+document.getElementById("btn-slack").onclick = proposeSlack;
+
+api("GET", "/health").then(r => log(r.ok ? "Connected to backend at " + API : "Cannot reach backend — is uvicorn running?"));
+</script>
+</body>
+</html>
