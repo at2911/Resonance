@@ -170,6 +170,28 @@ class IncidentStateService:
             self._repo.save(incident)
             return participant
 
+    def update_role_if_more_confident(
+        self,
+        incident_id: str,
+        participant_id: str,
+        role: ParticipantRole,
+        confidence: float,
+    ) -> Participant:
+        """Called by the extraction pipeline with an LLM's role guess for a
+        speaker. Only applies it if strictly more confident than what's
+        already recorded — a human correction is stored at confidence 1.0,
+        so this can never overwrite one.
+        """
+        with self._lock:
+            incident = self._repo.get(incident_id)
+            participant = self._require(incident.participants, participant_id, "participant")
+            if confidence > participant.role_confidence:
+                participant.role = role
+                participant.role_confidence = confidence
+                self._touch(incident)
+                self._repo.save(incident)
+            return participant
+
     # ------------------------------------------------------------------
     # Claims (facts / hypotheses / decisions / questions / risks / updates)
     # ------------------------------------------------------------------
