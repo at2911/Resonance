@@ -1,0 +1,247 @@
+:root {
+  --bg: #0b0f14;
+  --panel: #121822;
+  --panel2: #0e141d;
+  --border: #1f2a38;
+  --text: #e6edf3;
+  --dim: #8b98a9;
+  --accent: #4da3ff;
+  --fact: #2ecc71;
+  --hyp: #f1c40f;
+  --decision: #9b59b6;
+  --action: #4da3ff;
+  --risk: #e67e22;
+  --conflict: #e74c3c;
+  --critical: #ff5555;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    sans-serif;
+  font-size: 14px;
+}
+
+button {
+  font-family: inherit;
+}
+
+.btn {
+  background: var(--accent);
+  color: #04101c;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+}
+.btn:hover {
+  filter: brightness(1.1);
+}
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.btn.secondary {
+  background: #243040;
+  color: var(--text);
+}
+.btn.reject {
+  background: #3a1c1c;
+  color: #ff8080;
+}
+.btn.small {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.badge {
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+.badge.sev-SEV1,
+.badge.sev-SEV2 {
+  background: #4a1414;
+  color: #ff8080;
+}
+.badge.sev-UNKNOWN,
+.badge.sev-SEV3,
+.badge.sev-SEV4 {
+  background: #333;
+  color: #aaa;
+}
+.badge.status-ACTIVE {
+  background: #1b3a1b;
+  color: #5fd15f;
+}
+.badge.status-MITIGATING {
+  background: #3a2f14;
+  color: #e0b84a;
+}
+.badge.status-RESOLVED,
+.badge.status-CLOSED,
+.badge.status-MONITORING {
+  background: #1c2836;
+  color: var(--dim);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.panel > h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--dim);
+  margin: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel2);
+}
+.panel > .body {
+  padding: 10px 14px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.empty {
+  color: var(--dim);
+  font-style: italic;
+  padding: 8px 0;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 11px;
+  margin-bottom: 8px;
+  background: var(--panel2);
+  cursor: default;
+}
+.card:last-child {
+  margin-bottom: 0;
+}
+.card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.tag {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.4px;
+}
+.tag-FACT {
+  background: #12331f;
+  color: var(--fact);
+}
+.tag-HYPOTHESIS {
+  background: #332c0f;
+  color: var(--hyp);
+}
+.tag-DECISION {
+  background: #2a1733;
+  color: var(--decision);
+}
+.tag-ACTION {
+  background: #0f2333;
+  color: var(--action);
+}
+.tag-RISK {
+  background: #331f0f;
+  color: var(--risk);
+}
+.tag-QUESTION {
+  background: #1a2733;
+  color: #7fb0d9;
+}
+.tag-UPDATE {
+  background: #1c2836;
+  color: var(--dim);
+}
+
+.status-chip {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #1c2836;
+  color: var(--dim);
+}
+.status-chip.DISPUTED {
+  background: #3a1c1c;
+  color: #ff8080;
+}
+.status-chip.CONFIRMED {
+  background: #12331f;
+  color: var(--fact);
+}
+
+.conflict-card {
+  border-left: 3px solid var(--conflict);
+}
+.gap-critical {
+  border-left: 3px solid var(--critical);
+}
+.gap-normal {
+  border-left: 3px solid #555;
+}
+
+.evidence {
+  color: var(--dim);
+  font-size: 11.5px;
+  margin-top: 4px;
+}
+
+.owner {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+.modal-box {
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 18px;
+  width: min(480px, 92vw);
+}
+.modal-box .msg {
+  white-space: pre-line;
+  background: var(--panel2);
+  padding: 10px;
+  border-radius: 6px;
+  margin: 10px 0;
+  font-size: 12.5px;
+  border: 1px solid var(--border);
+}
