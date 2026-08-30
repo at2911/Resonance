@@ -47,17 +47,17 @@ class FakeResponse:
 
 def test_extraction_client_requires_api_key():
     with pytest.raises(ExtractionLLMCallError):
-        GeminiExtractionClient("", "gemini-2.5-flash")
+        GeminiExtractionClient("", "gemini-3.6-flash")
 
 
 def test_contradiction_client_requires_api_key():
     with pytest.raises(ContradictionLLMCallError):
-        GeminiContradictionClient("", "gemini-2.5-flash")
+        GeminiContradictionClient("", "gemini-3.6-flash")
 
 
 def test_gap_client_requires_api_key():
     with pytest.raises(GapLLMCallError):
-        GeminiGapAssessmentClient("", "gemini-2.5-flash")
+        GeminiGapAssessmentClient("", "gemini-3.6-flash")
 
 
 # ---------------------------------------------------------------------
@@ -66,7 +66,7 @@ def test_gap_client_requires_api_key():
 
 
 def test_extraction_client_returns_function_call_args(monkeypatch):
-    client = GeminiExtractionClient("fake-key", "gemini-2.5-flash")
+    client = GeminiExtractionClient("fake-key", "gemini-3.6-flash")
     payload = {"claims": [{"type": "FACT", "status": "CONFIRMED", "claim": "x", "confidence": 0.9}]}
     fake_call = types.FunctionCall(name=EXTRACTION_TOOL_NAME, args=payload)
     monkeypatch.setattr(
@@ -78,7 +78,7 @@ def test_extraction_client_returns_function_call_args(monkeypatch):
 
 
 def test_extraction_client_raises_on_api_error(monkeypatch):
-    client = GeminiExtractionClient("fake-key", "gemini-2.5-flash")
+    client = GeminiExtractionClient("fake-key", "gemini-3.6-flash")
 
     def raise_error(**kwargs):
         raise errors.APIError(503, {"error": {"message": "overloaded"}})
@@ -89,14 +89,14 @@ def test_extraction_client_raises_on_api_error(monkeypatch):
 
 
 def test_extraction_client_raises_when_no_function_call_returned(monkeypatch):
-    client = GeminiExtractionClient("fake-key", "gemini-2.5-flash")
+    client = GeminiExtractionClient("fake-key", "gemini-3.6-flash")
     monkeypatch.setattr(client._client.models, "generate_content", lambda **kw: FakeResponse([]))
     with pytest.raises(ExtractionLLMCallError):
         client.extract("some prompt")
 
 
 def test_extraction_client_raises_when_wrong_function_name_returned(monkeypatch):
-    client = GeminiExtractionClient("fake-key", "gemini-2.5-flash")
+    client = GeminiExtractionClient("fake-key", "gemini-3.6-flash")
     wrong_call = types.FunctionCall(name="some_other_tool", args={})
     monkeypatch.setattr(
         client._client.models, "generate_content", lambda **kw: FakeResponse([wrong_call])
@@ -108,7 +108,7 @@ def test_extraction_client_raises_when_wrong_function_name_returned(monkeypatch)
 def test_extraction_client_handles_none_function_calls(monkeypatch):
     """response.function_calls is documented as Optional — None when the
     model returns no parts with a function_call at all."""
-    client = GeminiExtractionClient("fake-key", "gemini-2.5-flash")
+    client = GeminiExtractionClient("fake-key", "gemini-3.6-flash")
     monkeypatch.setattr(client._client.models, "generate_content", lambda **kw: FakeResponse(None))
     with pytest.raises(ExtractionLLMCallError):
         client.extract("some prompt")
@@ -120,7 +120,7 @@ def test_extraction_client_handles_none_function_calls(monkeypatch):
 
 
 def test_contradiction_client_returns_function_call_args(monkeypatch):
-    client = GeminiContradictionClient("fake-key", "gemini-2.5-flash")
+    client = GeminiContradictionClient("fake-key", "gemini-3.6-flash")
     payload = {"conflicts": True, "conflict_type": "DATABASE_HEALTH", "explanation": "x"}
     fake_call = types.FunctionCall(name=CONTRADICTION_TOOL_NAME, args=payload)
     monkeypatch.setattr(
@@ -132,7 +132,7 @@ def test_contradiction_client_returns_function_call_args(monkeypatch):
 
 
 def test_contradiction_client_raises_on_api_error(monkeypatch):
-    client = GeminiContradictionClient("fake-key", "gemini-2.5-flash")
+    client = GeminiContradictionClient("fake-key", "gemini-3.6-flash")
 
     def raise_error(**kwargs):
         raise errors.APIError(500, {"error": {"message": "boom"}})
@@ -148,7 +148,7 @@ def test_contradiction_client_raises_on_api_error(monkeypatch):
 
 
 def test_gap_client_returns_function_call_args(monkeypatch):
-    client = GeminiGapAssessmentClient("fake-key", "gemini-2.5-flash")
+    client = GeminiGapAssessmentClient("fake-key", "gemini-3.6-flash")
     payload = {"dimensions": [{"dimension": "CUSTOMER_IMPACT", "covered": False, "gap_description": "unknown"}]}
     fake_call = types.FunctionCall(name=GAP_ASSESSMENT_TOOL_NAME, args=payload)
     monkeypatch.setattr(
@@ -160,7 +160,7 @@ def test_gap_client_returns_function_call_args(monkeypatch):
 
 
 def test_gap_client_raises_when_no_function_call_returned(monkeypatch):
-    client = GeminiGapAssessmentClient("fake-key", "gemini-2.5-flash")
+    client = GeminiGapAssessmentClient("fake-key", "gemini-3.6-flash")
     monkeypatch.setattr(client._client.models, "generate_content", lambda **kw: FakeResponse([]))
     with pytest.raises(GapLLMCallError):
         client.assess("incident context")
@@ -177,7 +177,7 @@ def test_extraction_service_validates_gemini_output_and_returns_claim(monkeypatc
     from app.services.extraction.schemas import ExtractionContext
     from app.services.extraction.service import ExtractionService
 
-    client = GeminiExtractionClient("fake-key", "gemini-2.5-flash")
+    client = GeminiExtractionClient("fake-key", "gemini-3.6-flash")
     payload = {
         "claims": [
             {
@@ -208,7 +208,7 @@ def test_extraction_service_retries_gemini_client_on_invalid_schema_then_succeed
     from app.services.extraction.schemas import ExtractionContext
     from app.services.extraction.service import ExtractionService
 
-    client = GeminiExtractionClient("fake-key", "gemini-2.5-flash")
+    client = GeminiExtractionClient("fake-key", "gemini-3.6-flash")
     bad_args = {"claims": [{"type": "NOT_A_TYPE", "status": "CONFIRMED", "claim": "x", "confidence": 0.5}]}
     good_args = {
         "claims": [
@@ -240,7 +240,7 @@ def test_extraction_service_degrades_gracefully_on_repeated_gemini_failure(monke
     from app.services.extraction.schemas import ExtractionContext
     from app.services.extraction.service import ExtractionService
 
-    client = GeminiExtractionClient("fake-key", "gemini-2.5-flash")
+    client = GeminiExtractionClient("fake-key", "gemini-3.6-flash")
 
     def always_fail(**kw):
         raise errors.APIError(503, {"error": {"message": "unavailable"}})

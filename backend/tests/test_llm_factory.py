@@ -37,7 +37,7 @@ def anthropic_settings() -> Settings:
         llm_api_key="fake-anthropic-key",
         llm_model="claude-sonnet-5",
         gemini_api_key="",
-        gemini_model="gemini-2.5-flash",
+        gemini_model="gemini-3.6-flash",
     )
 
 
@@ -47,7 +47,7 @@ def gemini_settings() -> Settings:
         llm_api_key="",
         llm_model="claude-sonnet-5",
         gemini_api_key="fake-gemini-key",
-        gemini_model="gemini-2.5-flash",
+        gemini_model="gemini-3.6-flash",
     )
 
 
