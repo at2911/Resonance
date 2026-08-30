@@ -21,10 +21,21 @@ Implemented:
   IncidentState mutations, and downgrades any CONFIRMED/RESOLVED claim
   missing evidence to PROBABLE instead of dropping or trusting it blindly.
   Reachable via `POST /incidents/{id}/utterances`.
+- **Contradiction Engine** (P0 #4) — `backend/app/services/contradiction/`.
+  Two deliberate stages: a deterministic, non-LLM candidate filter
+  (`find_candidates`) narrows to claims that share an extracted entity and
+  are an eligible type (FACT/HYPOTHESIS/UPDATE), then a dedicated LLM tool
+  call judges each candidate pair on meaning — not opposite-keyword
+  matching — returning a structured verdict with a `ConflictType` and
+  explanation. Wired into the extraction pipeline: every new claim is
+  checked against existing ones and a genuine conflict is recorded via the
+  same `IncidentStateService.add_conflict` from slice 1, which marks both
+  claims `DISPUTED` without deleting either. Fails safe — an LLM error
+  never fabricates a conflict, it just skips that pair.
 
-Not yet implemented: contradiction engine, information gap engine, Slack
-integration, Agora integration, voice summaries, frontend, demo replay
-mode. These land in subsequent slices per the priority order in the spec.
+Not yet implemented: information gap engine, Slack integration, Agora
+integration, voice summaries, frontend, demo replay mode. These land in
+subsequent slices per the priority order in the spec.
 
 ## Backend
 
@@ -44,7 +55,7 @@ cd backend
 pytest -v
 ```
 
-28/28 tests pass, covering: claim creation/evidence gating, the "a repeated
+37/37 tests pass, covering: claim creation/evidence gating, the "a repeated
 hypothesis is never auto-confirmed" rule, action lifecycle transitions,
 conflict detection (both claims preserved, marked `DISPUTED`) and
 evidence-gated resolution, information gap lifecycle, the deterministic
@@ -52,13 +63,18 @@ clarity score, the final summary's explicit "root cause remains
 unconfirmed" default, the external-action approval gate (including
 rejection and duplicate-execution protection), fact/hypothesis/decision/
 action/risk extraction, the confirmed-without-evidence safety downgrade,
-extraction retry-then-succeed and retry-exhausted-degrades-gracefully, and
-role-hint updates never overwriting an explicit human correction.
+extraction retry-then-succeed and retry-exhausted-degrades-gracefully,
+role-hint updates never overwriting an explicit human correction, the
+contradiction candidate filter (entity overlap, eligible types, excludes
+superseded claims), pairwise verdicts (conflict / no-conflict / fails-safe
+on LLM error), duplicate-conflict prevention, and an end-to-end replay of
+the spec's DB-vs-network hypothesis demo scenario proving a conflict is
+actually raised.
 
-Extraction tests run against a fake LLM client at the same interface the
-real Anthropic client implements (`LLMExtractionClient`), so they're
-deterministic and need no API key. The real Anthropic integration
-(`AnthropicExtractionClient`) is exercised by hand via `LLM_API_KEY` once
-that's configured — the endpoint returns a clean `503` if it isn't.
+Extraction/contradiction tests run against fake LLM clients at the same
+interfaces the real Anthropic clients implement (`LLMExtractionClient`,
+`ContradictionLLMClient`), so they're deterministic and need no API key.
+The real Anthropic integrations are exercised by hand via `LLM_API_KEY`
+once that's configured — the endpoint returns a clean `503` if it isn't.
 
 API is browsable at `http://127.0.0.1:8000/docs` once running.

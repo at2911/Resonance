@@ -206,6 +206,7 @@ class IncidentStateService:
         confidence: float,
         speaker_id: Optional[str] = None,
         evidence: Optional[str] = None,
+        entities: Optional[list[str]] = None,
     ) -> Claim:
         if status in (ClaimStatus.CONFIRMED, ClaimStatus.RESOLVED) and not evidence:
             raise EvidenceRequiredError(
@@ -221,6 +222,7 @@ class IncidentStateService:
                 confidence=confidence,
                 speaker_id=speaker_id,
                 evidence=evidence,
+                entities=entities or [],
             )
             incident.claims[claim.id] = claim
             event_type = (

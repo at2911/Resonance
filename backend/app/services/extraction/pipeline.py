@@ -15,8 +15,11 @@ import logging
 
 from pydantic import BaseModel, Field
 
+from typing import Optional
+
 from app.models.enums import ClaimStatus, ClaimType, RiskSeverity
-from app.models.incident import Action, Claim, Risk
+from app.models.incident import Action, Claim, Conflict, Risk
+from app.services.contradiction.service import ContradictionEngine
 from app.services.extraction.schemas import ExtractionContext, ExtractionResponse
 from app.services.incident_state.service import IncidentStateService
 
@@ -27,6 +30,7 @@ class ExtractionApplyResult(BaseModel):
     claims: list[Claim] = Field(default_factory=list)
     actions: list[Action] = Field(default_factory=list)
     risks: list[Risk] = Field(default_factory=list)
+    conflicts: list[Conflict] = Field(default_factory=list)
     role_updated: bool = False
 
 
@@ -35,6 +39,7 @@ def apply_extraction(
     incident_id: str,
     context: ExtractionContext,
     extraction: ExtractionResponse,
+    contradiction_engine: Optional[ContradictionEngine] = None,
 ) -> ExtractionApplyResult:
     result = ExtractionApplyResult()
 
@@ -95,7 +100,12 @@ def apply_extraction(
                 confidence=extracted.confidence,
                 speaker_id=context.speaker_id,
                 evidence=evidence,
+                entities=extracted.entities,
             )
             result.claims.append(claim)
+            if contradiction_engine is not None:
+                result.conflicts.extend(
+                    contradiction_engine.detect_and_record(service, incident_id, claim)
+                )
 
     return result

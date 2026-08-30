@@ -69,6 +69,12 @@ class Claim(BaseModel):
     evidence: Optional[str] = None
     supporting_events: list[str] = Field(default_factory=list)
     contradicting_events: list[str] = Field(default_factory=list)
+    entities: list[str] = Field(default_factory=list)
+    """Extracted entities (e.g. system/component names) — used by the
+    Contradiction Engine's candidate-generation prefilter (§8) and part of
+    the per-utterance extraction schema (§6). Not in the spec's minimum
+    Claims field list, but required to implement both of those sections.
+    """
 
 
 class Action(BaseModel):

@@ -107,6 +107,7 @@ def add_claim(incident_id: str, req: AddClaimRequest, service: IncidentStateServ
             req.confidence,
             req.speaker_id,
             req.evidence,
+            req.entities,
         )
     )
 
