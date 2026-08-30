@@ -37,7 +37,11 @@ class Settings(BaseSettings):
     llm_model: str = "claude-sonnet-5"
 
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    # gemini-2.5-flash was the original default here but is confirmed (by a
+    # live 404 from the real API, not docs) to be unavailable to new API
+    # keys as of this writing; gemini-3.6-flash is confirmed working via an
+    # actual successful request — see docs/GEMINI_PROVIDER.md.
+    gemini_model: str = "gemini-3.6-flash"
 
     slack_bot_token: str = ""
     slack_channel_id: str = ""

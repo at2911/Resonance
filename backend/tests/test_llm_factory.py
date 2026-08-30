@@ -102,10 +102,16 @@ class TestGapAssessmentClientSelection:
 
 
 def test_default_provider_is_anthropic():
-    """Settings() with no llm_provider override should default to
-    anthropic — the provider swap must be opt-in, never silently active."""
-    settings = Settings(llm_api_key="fake", gemini_api_key="")
-    assert settings.llm_provider == "anthropic"
+    """The Settings field default (not an instance built from the real,
+    gitignored backend/.env — which may legitimately have LLM_PROVIDER=
+    gemini set for manual verification) must be anthropic: the provider
+    swap must be opt-in, never silently active for anyone who hasn't
+    configured it. Checked against the class's own field default so this
+    is immune to whatever's actually in the environment running the test."""
+    assert Settings.model_fields["llm_provider"].default == "anthropic"
+
+    # And confirm that default is actually honored when nothing overrides it.
+    settings = Settings(llm_provider="anthropic", llm_api_key="fake", gemini_api_key="")
     assert isinstance(build_extraction_client(settings), AnthropicExtractionClient)
 
 

@@ -58,41 +58,70 @@ code.
   `anthropic.APIError` closely enough that the Gemini clients use the
   identical try/except shape the Anthropic clients use.
 
-### Model name
+### Model name — corrected after a real API call
 
-Defaulted to `gemini-2.5-flash` (`GEMINI_MODEL` env var, overridable).
-This is the exact model name used in the official `python-genai` SDK
-reference's own function-calling example — the one source in this
-exercise that was both authoritative *and* internally consistent with
-directly-inspected SDK behavior. Search results surfaced other, newer-
-sounding model names (`gemini-3.7-flash` and similar) with inconsistent,
-unverifiable version numbers and pricing claims from low-authority SEO
-content — **not used**, specifically because they could not be
-cross-checked the way everything above was.
+Originally defaulted to `gemini-2.5-flash`, chosen because it was the
+exact model name in the official `python-genai` SDK reference's own
+function-calling example — at the time, the most authoritative source
+available (search results surfaced newer-sounding names like
+`gemini-3.7-flash` with inconsistent, unverifiable version numbers from
+low-authority SEO content, deliberately not used).
 
-## What was NOT verified — the real gap
+**That default was wrong.** The first real request made against the live
+API (see "Manual verification" below) failed with a live `404`:
 
-**No actual request has been sent to the real Gemini API.** Everything
-above is verified against the SDK's Python-level contract: correct
-objects, correct fields, correct call shape. What is *not* verified:
+```
+This model models/gemini-2.5-flash is no longer available to new users.
+Please update your code to use models/gemini-3.6-flash for the latest
+features and improvements.
+```
 
-- Whether the real API, given `mode="ANY"` with exactly one allowed
-  function, reliably returns a well-formed call matching the declared
-  schema on the first attempt (the retry-then-degrade logic in
-  `ExtractionService`/`ContradictionEngine`/`GapEngine` exists
-  specifically because even Anthropic's forced tool-use isn't 100%
-  reliable — Gemini's real-world reliability under this schema is
-  unknown).
-- Whether `gemini-2.5-flash` specifically handles the full extraction
-  schema (nested arrays, enums, optional fields) as well as
-  `claude-sonnet-5` does — schema complexity affects structured-output
-  quality differently per model.
-- Rate limits / free-tier quota behavior in practice.
-- Whether a real `GEMINI_API_KEY` from Google AI Studio actually
-  authenticates successfully with this exact client construction.
+A doc or a search result saying a model exists is not the same as a key
+actually being able to use it — model availability changes faster than
+docs get updated, and varies by whether the key is "new". The default is
+now `gemini-3.6-flash`, and unlike the original choice, **this one is
+confirmed by an actual successful request** — see below.
 
-**Do not treat this integration as proven until a real request has been
-made and inspected by hand** — see "Manual verification" below.
+## What has now actually been verified end to end
+
+A real request was sent through the real, unmodified `GeminiExtractionClient`
+against the live API (key configured in the gitignored `backend/.env`,
+never logged or printed) for the utterance *"Payment failures increased
+to 38 percent at 14:05 after the latest deployment."* with
+`gemini-3.6-flash`. It returned a well-formed, single forced tool call on
+the first attempt — no retry needed — which validated cleanly against
+`ExtractionResponse` with no coercion:
+
+```json
+{
+  "type": "FACT",
+  "status": "CONFIRMED",
+  "claim": "Payment failure rate increased to 38% at 14:05 following the latest deployment",
+  "confidence": 0.95,
+  "evidence": "Speaker reported payment failure rate reached 38% at 14:05 after the latest deployment.",
+  "entities": ["Payment API", "latest deployment"],
+  "temporal_info": "14:05, after latest deployment"
+}
+```
+
+This resolves the two largest previously-open unknowns: a real
+`GEMINI_API_KEY` does authenticate correctly with this exact client
+construction, and the forced tool call does come back well-formed on the
+first attempt for a realistic incident utterance (not the pre-scripted
+ones the mocked tests use).
+
+## What is still NOT verified
+
+- Reliability across many/varied utterances and the full range of claim
+  types (only one FACT-shaped sentence has been tried against the real
+  API so far) — the retry-then-degrade logic in `ExtractionService`
+  exists because even forced tool-use isn't 100% reliable in general;
+  single-sample success doesn't establish a failure rate.
+- The Contradiction and Gap engines specifically — only the extraction
+  client has been exercised against the real API; the other two Gemini
+  clients share the same verified SDK plumbing but haven't each been
+  called for real yet.
+- Rate limits / free-tier quota behavior under sustained use.
 
 ## Architecture
 
@@ -151,21 +180,41 @@ major version, v2 — Pydantic's own compatibility guarantee) to satisfy
 `google-genai`'s floor; the full test suite (heavily Pydantic-model-based
 throughout the project) passed unchanged after the bump.
 
-## Manual verification against the real Gemini API (not yet done)
+## Manual verification against the real Gemini API
 
-1. Get a key from Google AI Studio (free tier).
-2. `backend/.env`: set `LLM_PROVIDER=gemini` and `GEMINI_API_KEY=<key>`.
-3. Restart the backend, `POST /incidents` to create one, then
-   `POST /incidents/{id}/utterances` with a real sentence, e.g.
-   `{"speaker_name": "Alice", "text": "Payment API is returning 503s, I checked the dashboard"}`.
-4. Confirm a `FACT`/`CONFIRMED` claim actually appears in the response
-   and in `GET /incidents/{id}` — not just that the call returns 200.
-5. Try a hypothesis ("I think the database pool is exhausted") and
-   confirm it does NOT come back `CONFIRMED`.
-6. Watch the backend logs for `extraction_attempt_failed` /
-   `extraction_degraded` — if Gemini's forced-tool-call reliability is
-   worse than Anthropic's in practice, it will show up here as retries or
-   degraded (empty) extractions.
+**Partially done — first two checks passed against a real key.**
 
-**This procedure has not been run.** No Gemini API key was available in
-this session.
+1. ✅ Real key configured in the gitignored `backend/.env`
+   (`LLM_PROVIDER=gemini`, `GEMINI_API_KEY=...`), confirmed loaded by the
+   running app without ever printing the key value.
+2. ✅ One real request through `GeminiExtractionClient` directly, for
+   *"Payment failures increased to 38 percent at 14:05 after the latest
+   deployment."* — returned a well-formed FACT/CONFIRMED claim on the
+   first attempt, validated cleanly against `ExtractionResponse` (see
+   above; this run is what caught the `gemini-2.5-flash` → `404`
+   problem and confirmed `gemini-3.6-flash` as the fix).
+3. ✅ One real request through the actual HTTP path,
+   `POST /incidents/{id}/utterances` with *"I just checked the load
+   balancer dashboard and it shows no unusual traffic spikes."* — a real
+   FACT/CONFIRMED claim landed in `GET /incidents/{id}`, the timeline
+   grew from 1 to 12 events, and the clarity score dropped from 100 to
+   20. Notably, the **Gap Engine's own real Gemini call also succeeded**
+   in the same request — it correctly assessed all 12 fixed dimensions
+   and produced the right CRITICAL/NORMAL split (customer impact and
+   rollback status critical, deployment/root-cause/etc. normal) —
+   evidence this isn't just the extraction client working, but the
+   pipeline's second independent Gemini-backed engine too.
+
+**Still not done:**
+
+- A hypothesis-shaped utterance ("I think the database pool is
+  exhausted") has not been tried — the specific "never auto-confirms a
+  hypothesis" behavior is unverified against the real API (though it's
+  enforced by `ExtractionService`'s own downgrade logic regardless of
+  what the model returns, so this is a defense-in-depth check, not a
+  single point of failure).
+- The Contradiction Engine's real Gemini client has not been exercised
+  (only one claim existed in the test incident, so no candidate pair
+  ever reached `assess_pair`).
+- Reliability across many utterances / rate-limit behavior under
+  sustained use — only two real requests have been made total.

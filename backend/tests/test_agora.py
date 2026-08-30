@@ -449,6 +449,12 @@ def test_webhook_history_with_extraction_unavailable_preserves_raw_events(state_
     they fall through to the real ones, which return None without
     LLM_API_KEY configured. The webhook must still succeed (200) and
     preserve the raw transcript rather than erroring or losing it.
+
+    Pins LLM_PROVIDER=anthropic and clears GEMINI_API_KEY explicitly,
+    not just LLM_API_KEY — otherwise this test's outcome depends on
+    whatever's actually in the real (gitignored) backend/.env on the
+    machine running it, e.g. a real Gemini key configured for manual
+    verification would make the "unavailable" path never trigger.
     """
     from app.models.enums import AgoraSessionStatus
     from app.services.agora.schemas import AgoraSession
@@ -456,7 +462,9 @@ def test_webhook_history_with_extraction_unavailable_preserves_raw_events(state_
     app.dependency_overrides[get_incident_state_service] = lambda: state_service
     app.dependency_overrides[get_agora_repository] = lambda: agora_repo
     monkeypatch.setenv("AGORA_WEBHOOK_SECRET", "test-secret")
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
     monkeypatch.setenv("LLM_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
     from app.config import get_settings
 
     get_settings.cache_clear()
