@@ -34,6 +34,7 @@ from app.models.enums import (
     ExternalActionType,
     GapImportance,
     GapStatus,
+    IncidentDimension,
     IncidentSeverity,
     ParticipantRole,
     RiskSeverity,
@@ -471,6 +472,7 @@ class IncidentStateService:
         description: str,
         importance: GapImportance,
         related_claims: Optional[list[str]] = None,
+        dimension: Optional[IncidentDimension] = None,
     ) -> InformationGap:
         with self._lock:
             incident = self._repo.get(incident_id)
@@ -478,6 +480,7 @@ class IncidentStateService:
                 description=description,
                 importance=importance,
                 related_claims=related_claims or [],
+                dimension=dimension,
             )
             incident.information_gaps[gap.id] = gap
             self._emit(

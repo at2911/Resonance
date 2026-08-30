@@ -64,6 +64,27 @@ class GapImportance(str, Enum):
     NORMAL = "NORMAL"
 
 
+class IncidentDimension(str, Enum):
+    """The fixed checklist of incident dimensions the Information Gap
+    Engine tracks (spec §9). Deliberately closed and enumerated rather than
+    LLM-invented, so gap create/resolve can be matched idempotently turn
+    over turn instead of fuzzy-matching free-text descriptions.
+    """
+
+    AFFECTED_SERVICE = "AFFECTED_SERVICE"
+    IMPACT = "IMPACT"
+    START_TIME = "START_TIME"
+    SYMPTOMS = "SYMPTOMS"
+    RECENT_CHANGES = "RECENT_CHANGES"
+    DEPLOYMENT = "DEPLOYMENT"
+    CUSTOMER_IMPACT = "CUSTOMER_IMPACT"
+    CURRENT_SYSTEM_HEALTH = "CURRENT_SYSTEM_HEALTH"
+    MITIGATION = "MITIGATION"
+    OWNER = "OWNER"
+    ROOT_CAUSE = "ROOT_CAUSE"
+    ROLLBACK_STATUS = "ROLLBACK_STATUS"
+
+
 class GapStatus(str, Enum):
     OPEN = "OPEN"
     RESOLVED = "RESOLVED"

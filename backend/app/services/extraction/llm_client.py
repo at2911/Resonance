@@ -42,6 +42,10 @@ force a classification.
 - Use the provided recent-claims context to populate references_previous_claim_ids and \
 contradiction_candidate_claim_ids using their real IDs. Only flag a contradiction candidate when \
 the new claim and the prior claim cannot both be true as stated.
+- If this utterance reports the result of a previously assigned action (e.g. "I checked the \
+network, packet loss is normal"), set completes_action_id to that action's real ID from the \
+provided recent-actions context, and make sure evidence states what was found. Leave it null if \
+no open action matches — never invent an ID.
 - confidence reflects your certainty in the *extraction* (did I classify this utterance \
 correctly), not the truth of the claim itself — status/evidence carry the truth judgment.
 """
@@ -103,5 +107,11 @@ def build_context_prompt(context) -> str:
             lines.append(f"  {c.id} | {c.type.value} | {c.status.value} | {c.normalized_claim}")
     else:
         lines.append("Recent claims: none yet.")
+    if context.recent_actions:
+        lines.append("Open actions (id | owner | status | description):")
+        for a in context.recent_actions:
+            lines.append(f"  {a.id} | {a.owner or 'unassigned'} | {a.status} | {a.description}")
+    else:
+        lines.append("Open actions: none yet.")
     lines.append(f'Utterance: "{context.utterance_text}"')
     return "\n".join(lines)

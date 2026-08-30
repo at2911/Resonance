@@ -77,6 +77,10 @@ EXTRACTION_TOOL_SCHEMA = {
                             "items": {"type": "string"},
                             "description": "IDs from the provided recent-claims context this claim may contradict.",
                         },
+                        "completes_action_id": {
+                            "type": ["string", "null"],
+                            "description": "If this claim reports the result of a previously assigned action (e.g. 'I checked the network, packet loss is normal'), the ID of that action from the provided recent-actions context. Null otherwise — never invent an ID.",
+                        },
                     },
                     "required": ["type", "status", "claim", "confidence"],
                 },
@@ -99,6 +103,7 @@ class ExtractedClaim(BaseModel):
     temporal_info: Optional[str] = None
     references_previous_claim_ids: list[str] = Field(default_factory=list)
     contradiction_candidate_claim_ids: list[str] = Field(default_factory=list)
+    completes_action_id: Optional[str] = None
 
 
 class ExtractionResponse(BaseModel):
@@ -118,6 +123,17 @@ class RecentClaimContext(BaseModel):
     normalized_claim: str
 
 
+class RecentActionContext(BaseModel):
+    """Compact open-action context so the LLM can link a "I checked X"
+    utterance back to the real action ID instead of inventing one.
+    """
+
+    id: str
+    description: str
+    owner: Optional[str] = None
+    status: str
+
+
 class ExtractionContext(BaseModel):
     incident_title: str
     speaker_id: Optional[str] = None
@@ -125,3 +141,4 @@ class ExtractionContext(BaseModel):
     speaker_role: Optional[ParticipantRole] = None
     utterance_text: str
     recent_claims: list[RecentClaimContext] = Field(default_factory=list)
+    recent_actions: list[RecentActionContext] = Field(default_factory=list)

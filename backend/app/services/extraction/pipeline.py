@@ -17,11 +17,12 @@ from pydantic import BaseModel, Field
 
 from typing import Optional
 
-from app.models.enums import ClaimStatus, ClaimType, RiskSeverity
-from app.models.incident import Action, Claim, Conflict, Risk
+from app.models.enums import ActionStatus, ClaimStatus, ClaimType, RiskSeverity
+from app.models.incident import Action, Claim, Conflict, InformationGap, Risk
 from app.services.contradiction.service import ContradictionEngine
 from app.services.extraction.schemas import ExtractionContext, ExtractionResponse
-from app.services.incident_state.service import IncidentStateService
+from app.services.incident_state.service import IncidentStateService, InvalidStateTransitionError
+from app.services.information_gaps.service import GapEngine
 
 logger = logging.getLogger("extraction")
 
@@ -31,6 +32,9 @@ class ExtractionApplyResult(BaseModel):
     actions: list[Action] = Field(default_factory=list)
     risks: list[Risk] = Field(default_factory=list)
     conflicts: list[Conflict] = Field(default_factory=list)
+    completed_actions: list[Action] = Field(default_factory=list)
+    gaps_created: list[InformationGap] = Field(default_factory=list)
+    gaps_resolved: list[InformationGap] = Field(default_factory=list)
     role_updated: bool = False
 
 
@@ -40,6 +44,7 @@ def apply_extraction(
     context: ExtractionContext,
     extraction: ExtractionResponse,
     contradiction_engine: Optional[ContradictionEngine] = None,
+    gap_engine: Optional[GapEngine] = None,
 ) -> ExtractionApplyResult:
     result = ExtractionApplyResult()
 
@@ -107,5 +112,49 @@ def apply_extraction(
                 result.conflicts.extend(
                     contradiction_engine.detect_and_record(service, incident_id, claim)
                 )
+            if extracted.completes_action_id:
+                completed = _complete_action_from_claim(
+                    service, incident_id, extracted.completes_action_id, claim
+                )
+                if completed is not None:
+                    result.completed_actions.append(completed)
+
+    if gap_engine is not None:
+        gap_result = gap_engine.recompute(service, incident_id)
+        result.gaps_created = gap_result.created
+        result.gaps_resolved = gap_result.resolved
 
     return result
+
+
+def _complete_action_from_claim(
+    service: IncidentStateService, incident_id: str, action_id: str, claim: Claim
+) -> Action | None:
+    incident = service.get(incident_id)
+    action = incident.actions.get(action_id)
+    if action is None or action.status not in (
+        ActionStatus.OPEN,
+        ActionStatus.IN_PROGRESS,
+        ActionStatus.BLOCKED,
+    ):
+        # The model referenced an action ID that doesn't exist or is
+        # already closed out — treat this the same as any other
+        # extraction slip: log and skip, never crash the pipeline over it.
+        logger.warning(
+            "extraction_referenced_invalid_action",
+            extra={"incident_id": incident_id, "action_id": action_id},
+        )
+        return None
+    try:
+        return service.update_action_status(
+            incident_id,
+            action_id,
+            ActionStatus.COMPLETED,
+            completion_evidence=claim.evidence or claim.text,
+        )
+    except InvalidStateTransitionError:
+        logger.warning(
+            "extraction_action_completion_race",
+            extra={"incident_id": incident_id, "action_id": action_id},
+        )
+        return None

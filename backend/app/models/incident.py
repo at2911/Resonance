@@ -30,6 +30,7 @@ from app.models.enums import (
     ExternalActionType,
     GapImportance,
     GapStatus,
+    IncidentDimension,
     IncidentSeverity,
     IncidentStatus,
     ParticipantRole,
@@ -112,6 +113,12 @@ class InformationGap(BaseModel):
     detected_at: datetime = Field(default_factory=utcnow)
     related_claims: list[str] = Field(default_factory=list)
     status: GapStatus = GapStatus.OPEN
+    dimension: Optional[IncidentDimension] = None
+    """Set when this gap was raised by the Information Gap Engine's fixed
+    dimension checklist (§9) — lets the engine idempotently resolve/recreate
+    a gap for the same dimension turn over turn instead of fuzzy-matching
+    free-text descriptions. None for gaps added ad hoc through the API.
+    """
 
 
 class Risk(BaseModel):

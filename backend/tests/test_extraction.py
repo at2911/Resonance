@@ -301,3 +301,93 @@ def test_role_hint_never_overwrites_human_correction(service, incident):
     assert result.role_updated is False
     stored = service.get(incident.id)
     assert stored.participants[participant.id].role == ParticipantRole.INCIDENT_COMMANDER
+
+
+def test_utterance_reporting_a_check_result_completes_the_referenced_action(service, incident):
+    """Mirrors spec §13: 'Bob, check the network metrics.' then later
+    'I checked the network and packet loss is normal.' should update the
+    existing action with completion evidence, not just create a new claim.
+    """
+    action = service.add_action(incident.id, "Check network metrics", owner="bob")
+
+    fake = FakeLLMExtractionClient(
+        [
+            {
+                "claims": [
+                    {
+                        "type": "FACT",
+                        "status": "CONFIRMED",
+                        "claim": "Network packet loss is normal",
+                        "confidence": 0.9,
+                        "evidence": "Bob checked network metrics",
+                        "completes_action_id": action.id,
+                    }
+                ]
+            }
+        ]
+    )
+    context = make_context(incident, text="I checked the network and packet loss is normal.")
+    response = ExtractionService(fake).extract(context)
+    result = apply_extraction(service, incident.id, context, response)
+
+    assert len(result.claims) == 1
+    assert len(result.completed_actions) == 1
+    completed = result.completed_actions[0]
+    assert completed.id == action.id
+    assert completed.status == ActionStatus.COMPLETED
+    assert completed.completion_evidence == "Bob checked network metrics"
+
+    stored = service.get(incident.id)
+    assert stored.actions[action.id].status == ActionStatus.COMPLETED
+
+
+def test_completes_action_id_referencing_unknown_action_is_ignored_safely(service, incident):
+    fake = FakeLLMExtractionClient(
+        [
+            {
+                "claims": [
+                    {
+                        "type": "FACT",
+                        "status": "CONFIRMED",
+                        "claim": "Network packet loss is normal",
+                        "confidence": 0.9,
+                        "evidence": "checked",
+                        "completes_action_id": "does-not-exist",
+                    }
+                ]
+            }
+        ]
+    )
+    context = make_context(incident)
+    response = ExtractionService(fake).extract(context)
+    result = apply_extraction(service, incident.id, context, response)
+
+    assert len(result.claims) == 1
+    assert result.completed_actions == []
+
+
+def test_completes_action_id_referencing_already_completed_action_is_ignored(service, incident):
+    action = service.add_action(incident.id, "Check network metrics", owner="bob")
+    service.update_action_status(incident.id, action.id, ActionStatus.COMPLETED, completion_evidence="done")
+
+    fake = FakeLLMExtractionClient(
+        [
+            {
+                "claims": [
+                    {
+                        "type": "FACT",
+                        "status": "CONFIRMED",
+                        "claim": "Network packet loss is normal",
+                        "confidence": 0.9,
+                        "evidence": "checked again",
+                        "completes_action_id": action.id,
+                    }
+                ]
+            }
+        ]
+    )
+    context = make_context(incident)
+    response = ExtractionService(fake).extract(context)
+    result = apply_extraction(service, incident.id, context, response)
+
+    assert result.completed_actions == []

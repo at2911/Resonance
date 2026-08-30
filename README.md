@@ -32,10 +32,30 @@ Implemented:
   same `IncidentStateService.add_conflict` from slice 1, which marks both
   claims `DISPUTED` without deleting either. Fails safe — an LLM error
   never fabricates a conflict, it just skips that pair.
+- **Information Gap Engine** (P0 #6) — `backend/app/services/information_gaps/`.
+  Tracks a fixed, closed checklist of 12 incident dimensions from the spec
+  (affected service, customer impact, rollback status, root cause, etc).
+  Importance (CRITICAL vs NORMAL) per dimension is a deterministic policy
+  table, not an LLM decision — it matches the spec's own example exactly
+  (customer impact / rollback status CRITICAL, start time NORMAL). The LLM's
+  only job is judging, from the confirmed facts/decisions/actions so far,
+  whether each dimension is actually covered — a full recompute rather than
+  incremental, since "is customer impact known" can't be judged one claim
+  at a time. Gaps are created/resolved idempotently per dimension, so a
+  dimension that becomes covered later auto-resolves its gap instead of
+  leaving a stale one. On repeated LLM failure it makes no state changes at
+  all (never auto-resolves a real gap or fabricates a false one).
+- **Action-update-from-evidence** (part of P0 #5) — the extraction schema
+  now carries `completes_action_id`: an utterance reporting a check result
+  ("I checked the network, packet loss is normal") is matched against the
+  incident's open actions and, if it genuinely reports on one, that action
+  is moved to `COMPLETED` with the utterance's evidence attached, instead
+  of only creating an unrelated new claim. Invalid or already-closed
+  action references are logged and skipped, never crash the pipeline.
 
-Not yet implemented: information gap engine, Slack integration, Agora
-integration, voice summaries, frontend, demo replay mode. These land in
-subsequent slices per the priority order in the spec.
+Not yet implemented: Slack integration, Agora integration, voice
+summaries, frontend, demo replay mode. These land in subsequent slices per
+the priority order in the spec.
 
 ## Backend
 
@@ -55,26 +75,19 @@ cd backend
 pytest -v
 ```
 
-37/37 tests pass, covering: claim creation/evidence gating, the "a repeated
-hypothesis is never auto-confirmed" rule, action lifecycle transitions,
-conflict detection (both claims preserved, marked `DISPUTED`) and
-evidence-gated resolution, information gap lifecycle, the deterministic
-clarity score, the final summary's explicit "root cause remains
-unconfirmed" default, the external-action approval gate (including
-rejection and duplicate-execution protection), fact/hypothesis/decision/
-action/risk extraction, the confirmed-without-evidence safety downgrade,
-extraction retry-then-succeed and retry-exhausted-degrades-gracefully,
-role-hint updates never overwriting an explicit human correction, the
-contradiction candidate filter (entity overlap, eligible types, excludes
-superseded claims), pairwise verdicts (conflict / no-conflict / fails-safe
-on LLM error), duplicate-conflict prevention, and an end-to-end replay of
-the spec's DB-vs-network hypothesis demo scenario proving a conflict is
-actually raised.
+45/45 tests pass, covering everything above plus: gap creation with correct
+deterministic importance, idempotent gap resolution once a dimension
+becomes covered, no duplicate gaps for the same dimension, safe
+degradation (no state changes) on repeated LLM failure, rejection of a
+response missing a required dimension, and action completion from a later
+evidence-bearing utterance (including safe no-ops when the referenced
+action doesn't exist or is already closed).
 
-Extraction/contradiction tests run against fake LLM clients at the same
-interfaces the real Anthropic clients implement (`LLMExtractionClient`,
-`ContradictionLLMClient`), so they're deterministic and need no API key.
-The real Anthropic integrations are exercised by hand via `LLM_API_KEY`
-once that's configured — the endpoint returns a clean `503` if it isn't.
+Extraction/contradiction/gap tests all run against fake LLM clients at the
+same interfaces the real Anthropic clients implement (`LLMExtractionClient`,
+`ContradictionLLMClient`, `GapAssessmentLLMClient`), so they're
+deterministic and need no API key. The real Anthropic integrations are
+exercised by hand via `LLM_API_KEY` once that's configured — the endpoint
+returns a clean `503` if it isn't.
 
 API is browsable at `http://127.0.0.1:8000/docs` once running.
