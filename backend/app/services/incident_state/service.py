@@ -596,15 +596,18 @@ class IncidentStateService:
     def mark_external_action_executing(
         self, incident_id: str, external_action_id: str
     ) -> ExternalAction:
-        """Guards against duplicate/replayed execution: only a PENDING->
-        APPROVED action that has never started executing may transition.
+        """Guards against duplicate/replayed execution: an approved action
+        may start executing from NOT_EXECUTED, or be retried from FAILED
+        (§14/§26 require a failed external action to be retryable) — but
+        never from EXECUTING (a concurrent/replayed attempt) or SUCCEEDED
+        (never re-execute something that already went through).
         """
         with self._lock:
             incident = self._repo.get(incident_id)
             ea = self._require(incident.external_actions, external_action_id, "external action")
             if ea.approval_status != ApprovalStatus.APPROVED:
                 raise InvalidStateTransitionError("External action has not been approved")
-            if ea.execution_status != ExecutionStatus.NOT_EXECUTED:
+            if ea.execution_status not in (ExecutionStatus.NOT_EXECUTED, ExecutionStatus.FAILED):
                 raise InvalidStateTransitionError(
                     f"External action already {ea.execution_status.value}; refusing duplicate execution"
                 )

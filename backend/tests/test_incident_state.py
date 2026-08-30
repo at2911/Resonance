@@ -259,6 +259,32 @@ def test_external_action_cannot_be_decided_twice(service, incident):
         service.decide_external_action(incident.id, ea.id, approved=True, approved_by="ic-alice")
 
 
+def test_external_action_can_be_retried_after_failure(service, incident):
+    ea = service.propose_external_action(
+        incident.id, ExternalActionType.SLACK_MESSAGE, {"channel": "#c", "text": "t"}
+    )
+    service.decide_external_action(incident.id, ea.id, approved=True, approved_by="ic-alice")
+    service.mark_external_action_executing(incident.id, ea.id)
+    service.mark_external_action_result(incident.id, ea.id, succeeded=False, execution_result="network error")
+
+    retried = service.mark_external_action_executing(incident.id, ea.id)
+    assert retried.execution_status.value == "EXECUTING"
+    result = service.mark_external_action_result(incident.id, ea.id, succeeded=True, execution_result="ts=1")
+    assert result.execution_status.value == "SUCCEEDED"
+
+
+def test_external_action_cannot_re_execute_after_success(service, incident):
+    ea = service.propose_external_action(
+        incident.id, ExternalActionType.SLACK_MESSAGE, {"channel": "#c", "text": "t"}
+    )
+    service.decide_external_action(incident.id, ea.id, approved=True, approved_by="ic-alice")
+    service.mark_external_action_executing(incident.id, ea.id)
+    service.mark_external_action_result(incident.id, ea.id, succeeded=True, execution_result="ts=1")
+
+    with pytest.raises(InvalidStateTransitionError):
+        service.mark_external_action_executing(incident.id, ea.id)
+
+
 def test_add_risk_and_final_summary_lists_unresolved_risks(service, incident):
     service.add_risk(
         incident.id,

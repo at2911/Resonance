@@ -52,10 +52,26 @@ Implemented:
   is moved to `COMPLETED` with the utterance's evidence attached, instead
   of only creating an unrelated new claim. Invalid or already-closed
   action references are logged and skipped, never crash the pipeline.
+- **Slack Integration** (P0 #8) — `backend/app/services/slack/` +
+  `backend/app/api/slack.py`. The proposed message is composed
+  deterministically from real state (`SlackMessageComposer`) — no LLM in
+  the loop for the exact text that goes into a real, permanent Slack
+  channel — then goes through the same generic propose → approve → execute
+  flow built in slice 1:
+  - `POST /incidents/{id}/slack-updates` composes and proposes (PENDING).
+  - `POST /incidents/{id}/external-actions/{id}/decision` approves/rejects
+    (existing generic endpoint).
+  - `POST /incidents/{id}/external-actions/{id}/execute` re-validates
+    approval server-side, then makes the real `chat.postMessage` call.
+  A failed Slack call is recorded as `FAILED` with the real error — never
+  reported as success — and can be retried; the state engine's execution
+  lock was tightened this slice to allow `FAILED → EXECUTING` (retry)
+  while still permanently blocking re-execution after `SUCCEEDED` or a
+  concurrent double-call while `EXECUTING`.
 
-Not yet implemented: Slack integration, Agora integration, voice
-summaries, frontend, demo replay mode. These land in subsequent slices per
-the priority order in the spec.
+Not yet implemented: Agora integration, voice summaries, frontend, demo
+replay mode. These land in subsequent slices per the priority order in the
+spec.
 
 ## Backend
 
@@ -75,19 +91,24 @@ cd backend
 pytest -v
 ```
 
-45/45 tests pass, covering everything above plus: gap creation with correct
-deterministic importance, idempotent gap resolution once a dimension
-becomes covered, no duplicate gaps for the same dimension, safe
-degradation (no state changes) on repeated LLM failure, rejection of a
-response missing a required dimension, and action completion from a later
-evidence-bearing utterance (including safe no-ops when the referenced
-action doesn't exist or is already closed).
+63/63 tests pass, covering everything above plus: the message composer
+(confirmed facts, unconfirmed vs. confirmed root cause, open action count,
+critical gaps), the `SlackWebClient` error-mapping boundary (bad token,
+API error, not-ok response, success), and the full propose → approve →
+execute HTTP flow — including execution rejected with `409` when not yet
+approved or after rejection, a failed Slack call recorded as `FAILED` with
+the real error and successfully retried afterward, and a `409` on any
+attempt to execute a second time after a `SUCCEEDED` result. Also verified
+booting as a real `uvicorn` process (not just via in-process TestClient)
+and hit over actual HTTP.
 
 Extraction/contradiction/gap tests all run against fake LLM clients at the
 same interfaces the real Anthropic clients implement (`LLMExtractionClient`,
-`ContradictionLLMClient`, `GapAssessmentLLMClient`), so they're
-deterministic and need no API key. The real Anthropic integrations are
-exercised by hand via `LLM_API_KEY` once that's configured — the endpoint
-returns a clean `503` if it isn't.
+`ContradictionLLMClient`, `GapAssessmentLLMClient`); Slack tests run
+against a fake at the `SlackClient` interface the real `SlackWebClient`
+implements. All deterministic, no API key or Slack workspace needed. The
+real integrations are exercised by hand via `LLM_API_KEY` /
+`SLACK_BOT_TOKEN` / `SLACK_CHANNEL_ID` once configured — endpoints return a
+clean `503` if they aren't.
 
 API is browsable at `http://127.0.0.1:8000/docs` once running.
