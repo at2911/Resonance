@@ -182,7 +182,10 @@ throughout the project) passed unchanged after the bump.
 
 ## Manual verification against the real Gemini API
 
-**Partially done — first two checks passed against a real key.**
+**All six checks below passed.** Six real requests total have been made
+against the live API across this and the prior verification pass — still
+a small sample, so "reliability under sustained/varied use" remains
+genuinely open (see the end of this section).
 
 1. ✅ Real key configured in the gitignored `backend/.env`
    (`LLM_PROVIDER=gemini`, `GEMINI_API_KEY=...`), confirmed loaded by the
@@ -204,17 +207,44 @@ throughout the project) passed unchanged after the bump.
    rollback status critical, deployment/root-cause/etc. normal) —
    evidence this isn't just the extraction client working, but the
    pipeline's second independent Gemini-backed engine too.
+4. ✅ **Model identifier independently re-verified**, not just trusted
+   from the 404's suggestion: called the live `client.models.list()`
+   endpoint directly. `models/gemini-3.6-flash` is listed with
+   `generateContent` in its `supported_actions`. Notably,
+   `models/gemini-2.5-flash` is *also* still listed with `generateContent`
+   support — the catalog listing does not reflect per-key entitlements,
+   so listing alone would not have caught the original wrong default;
+   only an actual `generateContent` call against a specific key does
+   (which is exactly how the 404 was found). `gemini-3.6-flash` is
+   confirmed by both signals: listed *and* already proven functional by
+   real calls.
+5. ✅ Hypothesis-utterance path, real API: *"I think the database
+   connection pool might be exhausted, but I haven't confirmed it yet."*
+   → `type=HYPOTHESIS`, `status=UNCONFIRMED`, `evidence=null` (correctly,
+   since none was stated) — never `CONFIRMED`. Bonus: the model also
+   inferred `speaker_role_hint=BACKEND_ENGINEER` at 0.6 confidence from
+   context alone, exercising that part of the schema for the first time
+   against the real API too.
+6. ✅ `GeminiContradictionClient`, real API, both directions:
+   - Positive case (the spec's own canonical example — DB instability vs.
+     DB healthy/network dropping packets): `conflicts=true`,
+     `conflict_type=DATABASE_HEALTH`, with a correct one-sentence
+     explanation ("The database cannot be experiencing instability while
+     simultaneously appearing healthy.").
+   - Negative case (an unrelated deployment-time fact vs. an unrelated
+     support-ticket-count fact): `conflicts=false`, `conflict_type=null`,
+     `explanation=null` — confirming the client doesn't just always say
+     yes.
+   Both validated cleanly against `ContradictionVerdict` with no
+   coercion needed.
 
-**Still not done:**
+**Still open:**
 
-- A hypothesis-shaped utterance ("I think the database pool is
-  exhausted") has not been tried — the specific "never auto-confirms a
-  hypothesis" behavior is unverified against the real API (though it's
-  enforced by `ExtractionService`'s own downgrade logic regardless of
-  what the model returns, so this is a defense-in-depth check, not a
-  single point of failure).
-- The Contradiction Engine's real Gemini client has not been exercised
-  (only one claim existed in the test incident, so no candidate pair
-  ever reached `assess_pair`).
-- Reliability across many utterances / rate-limit behavior under
-  sustained use — only two real requests have been made total.
+- Reliability across many/varied utterances and sustained use — six real
+  requests is enough to prove the plumbing and basic semantics are
+  correct, not enough to characterize a failure rate the way
+  `ExtractionService`'s retry/degrade logic exists to handle.
+- The Gap Engine's Gemini client was exercised via the full HTTP path
+  (check 3) but never called directly/in isolation the way extraction
+  and contradiction were.
+- Rate limits / free-tier quota behavior under sustained use.
