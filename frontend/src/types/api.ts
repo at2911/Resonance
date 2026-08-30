@@ -277,3 +277,15 @@ export interface DecideExternalActionRequest {
   approved: boolean
   approved_by: string
 }
+
+// ---- Demo Mode (backend/app/services/demo/schemas.py) ----
+
+export type DemoStatusValue = 'IDLE' | 'PLAYING' | 'PAUSED' | 'COMPLETED'
+
+export interface DemoStatus {
+  status: DemoStatusValue
+  incident_id: string | null
+  current_step: number
+  total_steps: number
+  last_step_description: string | null
+}

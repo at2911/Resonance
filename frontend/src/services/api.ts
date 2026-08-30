@@ -15,6 +15,7 @@ import type {
   Conflict,
   CreateIncidentRequest,
   DecideExternalActionRequest,
+  DemoStatus,
   ExternalAction,
   ExtractionApplyResult,
   FinalSummary,
@@ -95,3 +96,10 @@ export const proposeSlackUpdate = (id: string) =>
 
 export const executeExternalAction = (id: string, externalActionId: string) =>
   request<ExternalAction>('POST', `/incidents/${id}/external-actions/${externalActionId}/execute`)
+
+// backend/app/api/demo.py
+export const startDemo = () => request<DemoStatus>('POST', '/demo/start')
+export const pauseDemo = () => request<DemoStatus>('POST', '/demo/pause')
+export const resumeDemo = () => request<DemoStatus>('POST', '/demo/resume')
+export const resetDemo = () => request<DemoStatus>('POST', '/demo/reset')
+export const getDemoStatus = () => request<DemoStatus>('GET', '/demo/status')

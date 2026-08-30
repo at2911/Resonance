@@ -1,11 +1,18 @@
 import { useState } from 'react'
+import { DemoControls } from './components/DemoControls'
 import { Dashboard } from './pages/Dashboard'
-import { ApiError, createIncident } from './services/api'
+import { ApiError, createIncident, startDemo } from './services/api'
 import type { IncidentSeverity } from './types/api'
 
 const SEVERITIES: IncidentSeverity[] = ['SEV1', 'SEV2', 'SEV3', 'SEV4', 'UNKNOWN']
 
-function CreateIncidentScreen({ onCreated }: { onCreated: (id: string) => void }) {
+function CreateIncidentScreen({
+  onCreated,
+  onDemoStarted,
+}: {
+  onCreated: (id: string) => void
+  onDemoStarted: (id: string) => void
+}) {
   const [title, setTitle] = useState('Payment API Outage')
   const [severity, setSeverity] = useState<IncidentSeverity>('SEV1')
   const [busy, setBusy] = useState(false)
@@ -17,6 +24,19 @@ function CreateIncidentScreen({ onCreated }: { onCreated: (id: string) => void }
     try {
       const incident = await createIncident({ title, severity })
       onCreated(incident.id)
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not reach the backend')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleRunDemo() {
+    setBusy(true)
+    setError(null)
+    try {
+      const status = await startDemo()
+      if (status.incident_id) onDemoStarted(status.incident_id)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not reach the backend')
     } finally {
@@ -49,6 +69,9 @@ function CreateIncidentScreen({ onCreated }: { onCreated: (id: string) => void }
         <button className="btn" disabled={busy || !title.trim()} onClick={handleCreate} data-testid="btn-create-incident">
           {busy ? 'Creating…' : 'Create Incident'}
         </button>
+        <button className="btn secondary" disabled={busy} onClick={handleRunDemo} data-testid="btn-run-demo">
+          ▶ Run Backend Demo
+        </button>
         {error && <div style={{ color: 'var(--critical)', fontSize: 12.5 }}>{error}</div>}
       </div>
     </div>
@@ -57,5 +80,26 @@ function CreateIncidentScreen({ onCreated }: { onCreated: (id: string) => void }
 
 export default function App() {
   const [incidentId, setIncidentId] = useState<string | null>(null)
-  return incidentId ? <Dashboard incidentId={incidentId} /> : <CreateIncidentScreen onCreated={setIncidentId} />
+  const [demoActive, setDemoActive] = useState(false)
+
+  function handleDemoStarted(id: string) {
+    setIncidentId(id)
+    setDemoActive(true)
+  }
+
+  function handleDemoReset() {
+    setIncidentId(null)
+    setDemoActive(false)
+  }
+
+  if (!incidentId) {
+    return <CreateIncidentScreen onCreated={setIncidentId} onDemoStarted={handleDemoStarted} />
+  }
+
+  return (
+    <>
+      {demoActive && <DemoControls onReset={handleDemoReset} />}
+      <Dashboard incidentId={incidentId} />
+    </>
+  )
 }

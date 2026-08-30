@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.agora import router as agora_router
 from app.api.conversation import router as conversation_router
+from app.api.demo import router as demo_router
 from app.api.incidents import router as incidents_router
 from app.api.slack import router as slack_router
 from app.config import get_settings
@@ -24,6 +25,7 @@ app.include_router(incidents_router)
 app.include_router(conversation_router)
 app.include_router(slack_router)
 app.include_router(agora_router)
+app.include_router(demo_router)
 
 
 @app.get("/health")
