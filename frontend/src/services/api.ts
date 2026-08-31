@@ -10,6 +10,7 @@ import type {
   AddConflictRequest,
   AddInformationGapRequest,
   Action,
+  AgoraSession,
   Claim,
   ClarityScoreBreakdown,
   Conflict,
@@ -21,6 +22,7 @@ import type {
   FinalSummary,
   Incident,
   InformationGap,
+  StartSessionResponse,
 } from '../types/api'
 
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://127.0.0.1:8000'
@@ -103,3 +105,10 @@ export const pauseDemo = () => request<DemoStatus>('POST', '/demo/pause')
 export const resumeDemo = () => request<DemoStatus>('POST', '/demo/resume')
 export const resetDemo = () => request<DemoStatus>('POST', '/demo/reset')
 export const getDemoStatus = () => request<DemoStatus>('GET', '/demo/status')
+
+// backend/app/api/agora.py
+export const startAgoraSession = (incidentId: string) =>
+  request<StartSessionResponse>('POST', `/incidents/${incidentId}/agora/session`, { agent_uid: 0 })
+
+export const endAgoraSession = (incidentId: string, sessionId: string) =>
+  request<AgoraSession>('POST', `/incidents/${incidentId}/agora/session/${sessionId}/end`)

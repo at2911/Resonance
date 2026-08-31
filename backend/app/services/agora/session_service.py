@@ -7,8 +7,10 @@ already-created session's incident_id.
 
 from __future__ import annotations
 
+from app.config import Settings, get_settings
 from app.models.enums import AgoraSessionStatus, TimelineEventType
 from app.repositories.agora_repository import AgoraRepository
+from app.services.agora.agent_config import AgentConfigError, build_default_agent_properties
 from app.services.agora.rest_client import AgoraConversationalAIClient, AgoraRestError
 from app.services.agora.schemas import AgoraSession, StartSessionRequest, StartSessionResponse, utcnow
 from app.services.agora.token import TokenBuilder, TokenBuildError
@@ -22,6 +24,7 @@ def start_session(
     token_builder: TokenBuilder,
     incident_id: str,
     req: StartSessionRequest,
+    settings: Settings | None = None,
 ) -> StartSessionResponse:
     # Validates the incident exists before touching any external service.
     state_service.get(incident_id)
@@ -40,14 +43,28 @@ def start_session(
         agora_repo.save_session(session)
         raise
 
+    # /join requires asr/llm/tts (docs/AGORA_INTEGRATION.md §3) — a caller
+    # that doesn't supply one falls back to the server-built default
+    # (agent_config.py) rather than silently omitting it, which would
+    # make the request fail against the real API. Defaults are only
+    # computed if actually needed, so a caller supplying all three (e.g.
+    # tests) never has to have GEMINI_API_KEY configured.
+    needs_defaults = req.asr is None or req.llm is None or req.tts is None
+    try:
+        defaults = build_default_agent_properties(settings or get_settings()) if needs_defaults else {}
+    except AgentConfigError:
+        session.status = AgoraSessionStatus.FAILED
+        agora_repo.save_session(session)
+        raise
+
     properties = {
         "channel": channel,
         "token": agent_token,
         "agent_rtc_uid": str(req.agent_uid),
         "remote_rtc_uids": ["*"],
-        **({"asr": req.asr} if req.asr else {}),
-        **({"llm": req.llm} if req.llm else {}),
-        **({"tts": req.tts} if req.tts else {}),
+        "asr": req.asr or defaults["asr"],
+        "llm": req.llm or defaults["llm"],
+        "tts": req.tts or defaults["tts"],
         **req.extra_properties,
     }
 

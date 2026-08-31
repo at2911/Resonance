@@ -21,28 +21,35 @@ Sources consulted are linked inline.
 
 ## 1. Base URL and REST surface
 
-**VERIFIED (direct fetch + search synthesis).**
+**`/join` and `/leave`: VERIFIED (direct fetch + a real successful call
+against a live Agora project — see §3 and §3a). `/query`/`/update`:
+VERIFIED (direct fetch) but never called by this integration.**
 
 ```
 https://api.agora.io/api/conversational-ai-agent/v2/projects/<appid>
 ```
 
-Endpoints confirmed to exist under this base:
-- `POST {base}/join` — start a Conversational AI agent
-  ([Start a conversational AI agent](https://docs.agora.io/en/conversational-ai/rest-api/join))
-- `POST {base}/leave` — stop an agent
+Endpoints:
+- `POST {base}/join` — start a Conversational AI agent. **A real call
+  against this returned `200` with a genuine `agent_id`** — see §3a.
+  Reference page: [Start a conversational AI agent](https://docs.agora.io/en/conversational-ai/rest-api/agent/join)
+  (note: the docs-site path is `rest-api/agent/join`, not `rest-api/join`
+  as an earlier version of this doc had it — that stale link was never
+  actually used by the code, which always called the correct API path
+  above, but was corrected here).
+- `POST {base}/agents/{agent_id}/leave` — stop an agent. `agent_id` is a
+  **path parameter**, not a body field. This was originally implemented
+  as `POST {base}/leave` with `agent_id` in the body (a guess); a real
+  call against it returned a routing `404`. Corrected via a direct docs
+  fetch and **verified with a real call against a known-active session,
+  which succeeded** (backend returned `200`, session transitioned to
+  `ENDED`) — see §3a.
 - `GET`/`POST {base}/agent/{agent_id}/query` — query agent status
-  ([Query agent status](https://docs.agora.io/en/conversational-ai/rest-api/agent/query))
+  ([Query agent status](https://docs.agora.io/en/conversational-ai/rest-api/agent/query)).
+  Not called by this integration.
 - `{base}/agent/{agent_id}/update` — update a running agent's configuration
-  ([Update agent configuration](https://docs.agora.io/en/conversational-ai/rest-api/agent/update))
-
-The exact HTTP verb and path shape of `leave`/`query`/`update` (whether
-`agent_id` is a path segment or a body field) was **not** confirmed by a
-direct fetch — the reference pages describe them narratively without a
-verbatim example request. `join` is the only endpoint this integration
-calls automatically; `leave` is called with a best-effort body shape (see
-`rest_client.py`) that should be spot-checked against the Console/docs
-before a real session.
+  ([Update agent configuration](https://docs.agora.io/en/conversational-ai/rest-api/agent/update)).
+  Not called by this integration.
 
 ## 2. Authentication
 
@@ -62,45 +69,114 @@ required and are configured separately:
 
 ## 3. Starting an agent (`POST /join`)
 
-**VERIFIED (search synthesis of Agora blog/tutorial examples and the
-release-notes page, which was fetched directly and confirms the field
-names below as real, versioned API parameters — but no single fetched
-page showed one complete example request body).**
+**VERIFIED (direct fetch of the corrected `rest-api/agent/join` page,
+plus per-vendor direct fetches for the exact ASR/LLM/TTS blocks — see
+§3b — and a real successful call against a live project, §3a).**
 
-Request body shape:
+`asr`, `llm`, and `tts` are all **required**, confirmed by direct fetch —
+omitting any of them (this integration's original behavior, before this
+change) would make a real `/join` call fail.
+
+Request body shape actually used by `session_service.py`:
 
 ```json
 {
-  "name": "<unique agent instance name, cannot be reused while active>",
+  "name": "agent-<session-id>",
   "properties": {
     "channel": "<RTC channel name>",
     "token": "<RTC token for the agent's own uid>",
-    "agent_rtc_uid": "<agent's uid in the channel; '0' = random>",
+    "agent_rtc_uid": "<agent's uid in the channel>",
     "remote_rtc_uids": ["*"],
-    "enable_string_uid": false,
-    "idle_timeout": 300,
-    "asr": { "vendor": "...", "language": "en-US", "params": {} },
-    "llm": { "vendor": "...", "system_messages": [...], "params": {} },
-    "tts": { "vendor": "...", "params": {} },
-    "turn_detection": { "mode": "...", "config": {} },
-    "advanced_features": { "enable_rtm": true },
-    "parameters": { "data_channel": "rtm" }
+    "asr": { "vendor": "ares", "language": "en-US" },
+    "llm": {
+      "url": "https://generativelanguage.googleapis.com/v1beta/models/<GEMINI_MODEL>:streamGenerateContent?alt=sse&key=<GEMINI_API_KEY>",
+      "style": "gemini",
+      "params": { "model": "<GEMINI_MODEL>" },
+      "system_messages": [{ "role": "user", "parts": [{ "text": "<incident-commander system prompt, see §3c>" }] }]
+    },
+    "tts": {
+      "credential_mode": "managed",
+      "vendor": "minimax",
+      "params": {
+        "url": "wss://api.minimax.io/ws/v1/t2a_v2",
+        "model": "speech-2.8-turbo",
+        "voice_setting": { "voice_id": "English_captivating_female1", "speed": 1.0 },
+        "audio_setting": { "sample_rate": 44100 }
+      }
+    }
   }
 }
 ```
 
-- `asr`/`llm`/`tts` require a specific vendor's credentials and are
-  deployment-specific — this integration does **not** hardcode a vendor
-  and instead passes through whatever config is supplied at session-start
-  time (see §7). Guessing a default vendor here would be inventing
-  behavior the spec explicitly forbids.
-- `advanced_features.enable_rtm: true` and `parameters.data_channel: "rtm"`
-  are required to get live transcript delivery at all (see §5).
-- Response is expected to include an `agent_id` — this is corroborated by
-  every webhook payload (§4) carrying `agent_id` as the way to correlate
-  events back to a specific running agent, but the literal `/join`
-  response schema was not fetched directly. Treat `agent_id` extraction in
-  `rest_client.py` as best-effort pending a live check.
+Response includes `agent_id` — **confirmed by a real call**, not just by
+inference from the webhook payload shape (see §3a).
+
+### 3a. Real verification against a live Agora project
+
+Performed once, against real `AGORA_APP_ID`/`AGORA_CUSTOMER_KEY`/
+`AGORA_CUSTOMER_SECRET`/`GEMINI_API_KEY`, with the ASR/LLM/TTS block above
+built entirely server-side (`app/services/agora/agent_config.py`):
+
+- `POST /incidents/{id}/agora/session` with an empty body (`{"agent_uid": 0}`,
+  no asr/llm/tts supplied) → backend called the real `/join` → **`200 OK`**
+  with a genuine `agent_id` (format `A44...`, redacted-length-preserved in
+  session notes) and our own session record correctly transitioned to
+  `ACTIVE`. The incident timeline correctly recorded
+  `AGORA_SESSION_STARTED` with the real agent_id embedded.
+- Repeated through the actual React dashboard (not curl) — clicking
+  "Start AI Incident Commander" produced the same real result, displayed
+  channel name and RTC token, confirming the full frontend → backend →
+  Agora path.
+- `/leave`, corrected to `POST {base}/agents/{agent_id}/leave`, was
+  verified twice: once against a session that had likely already expired
+  (no participant had joined) — returned a structured `TaskNotFound`
+  error rather than a routing 404, strong evidence the endpoint shape is
+  correct — and once against a session started and ended within seconds
+  of each other (via the dashboard's "End Session" button) — **this one
+  fully succeeded**, our backend returned `200`, the session transitioned
+  to `ENDED`, and the timeline recorded `AGORA_SESSION_ENDED`.
+
+**What this does NOT verify:** no human has joined the created channel
+and spoken. Everything downstream of "Agora receives real audio" — ASR
+transcription quality, the agent's own conversational behavior, webhook
+delivery of a real `agent history` event, and the extraction pipeline
+processing real (not synthetic) transcript — remains unverified pending
+a real voice test, which requires a human participant this environment
+cannot provide. See §10 for exact next steps.
+
+### 3b. Per-vendor verification (ASR/LLM/TTS blocks above)
+
+Each block was independently confirmed by a **direct fetch** of Agora's
+own vendor-specific documentation page, not inferred or reused from a
+different vendor's shape:
+
+- `asr` (`vendor: "ares"`, Agora's own native ASR) — direct fetch,
+  `docs.agora.io/en/conversational-ai/models/asr/ares`. No external
+  credential needed.
+- `llm` (Google Gemini, `style: "gemini"`) — direct fetch,
+  `docs.agora.io/en/ai/models/llm/gemini`. Requires the caller's own
+  Gemini API key (no Agora Managed Key documented for this vendor) — this
+  integration reuses the project's existing `GEMINI_API_KEY`.
+- `tts` (MiniMax, `credential_mode: "managed"`) — direct fetch,
+  `docs.agora.io/en/ai/models/tts/minimax`, which explicitly states
+  `params.key`/`params.group_id` are not required in managed mode. No
+  external MiniMax account needed; Agora bills this through the Agora
+  account instead.
+
+This combination was chosen specifically because it requires zero new
+vendor signups beyond what this project already has configured — see the
+research report this implementation was based on for the alternatives
+considered (Agora's `preset` parameter exists but its exact usable preset
+name strings were never found in any fetchable page, so it was not used).
+
+### 3c. Incident-commander system prompt
+
+The agent's `llm.system_messages` uses a fixed prompt
+(`AGORA_INCIDENT_COMMANDER_SYSTEM_PROMPT` in `agent_config.py`) that
+explicitly forbids the same thing the rest of this system forbids: never
+present a hypothesis as a confirmed root cause, never invent evidence/
+owners/timestamps, and require explicit human approval for critical
+actions outside the voice agent itself.
 
 ## 4. Webhook events (server-to-server)
 
@@ -283,48 +359,66 @@ Flagged limitation: this package has had no new PyPI release in the last
 adequate (token format hasn't changed) but should be revisited if Agora
 ships a maintained successor before a real production deployment.
 
-## 9. What was NOT implemented (explicitly out of scope this slice)
+## 9. What was NOT implemented (explicitly out of scope)
 
 Per the spec's "do not overbuild": telephony (events 201/202), avatar
-features, MCP tool servers, multi-LLM-model orchestration inside the
-Agora agent itself, and any specific ASR/LLM/TTS vendor default. Session
-creation accepts these as pass-through configuration; this integration
-does not choose a vendor on the caller's behalf.
+features, MCP tool servers, and multi-LLM-model orchestration inside the
+Agora agent itself. Session creation still accepts an explicit
+`asr`/`llm`/`tts` override in the request body, which take priority over
+the server-built default (§3) — this integration does not force a
+vendor choice on the caller, it just no longer requires them to supply
+one to get a working session.
+
+Also explicitly not built: any embedded audio/RTC call UI in the
+frontend. `AgoraControls.tsx` starts/stops the agent and displays the
+channel name and RTC token; a human still joins the call through an
+external Agora-compatible client (Agora's own web demo, Studio's test
+call feature, or a custom Web/Mobile SDK integration) — building that
+client is a separate, larger scope than this milestone.
 
 ## 10. Manual real-Agora verification procedure
 
-This cannot be executed in this development environment (no live Agora
-project, no browser/mobile client, non-interactive). To actually verify
-against a real Agora project:
+**Steps 1–4 below have been run for real, this session, against a live
+Agora project.** Steps 5+ (a human joining and speaking) have not —
+this environment has no microphone/audio-call capability.
 
-1. Create an Agora project in the Console; note `App ID`, generate an
-   `App Certificate`, and generate a `Customer ID` / `Customer Secret`
-   under RESTful API credentials.
-2. Configure a Conversational AI webhook callback URL pointing at
-   `POST https://<your-host>/agora/webhook` and note the generated
-   webhook secret; set `AGORA_WEBHOOK_SECRET`.
-3. Fill in `.env` with `AGORA_APP_ID`, `AGORA_APP_CERTIFICATE`,
-   `AGORA_CUSTOMER_KEY`, `AGORA_CUSTOMER_SECRET`, `AGORA_WEBHOOK_SECRET`.
-4. `POST /incidents/{id}/agora/session` with real ASR/LLM/TTS vendor
-   config for your account — verify a 200 with a real `agent_id` and RTC
-   join token, and that the agent actually appears connected in the
-   Agora Console for that channel.
-5. Join the returned channel from two separate real or test RTC clients
-   (e.g. Agora's own web demo, or a minimal client using the Web SDK) and
-   speak.
-6. Confirm `POST /agora/webhook` is being hit (check server logs / the
-   `RawConversationEvent`s persisted for the incident) once the session
-   ends, and that the transcript in `agent history` reconstructs into
-   claims/timeline entries via the existing pipeline.
-7. Optionally build a minimal RTM-listening relay to exercise
+1. ✅ Real credentials configured (`AGORA_APP_ID`, `AGORA_APP_CERTIFICATE`,
+   `AGORA_CUSTOMER_KEY`, `AGORA_CUSTOMER_SECRET`, `AGORA_WEBHOOK_SECRET`,
+   `GEMINI_API_KEY`) — confirmed loaded without printing any value.
+2. ✅ `POST /incidents/{id}/agora/session` with an empty body — real `200`,
+   real `agent_id`, session `ACTIVE`, correct timeline event. Repeated
+   through the actual dashboard UI, not just curl. See §3a for the full
+   record.
+3. ✅ Ending a session — `POST .../agora/session/{id}/end` — real `200`,
+   session `ENDED`, correct timeline event, after correcting the `/leave`
+   endpoint shape (§1/§3a) based on a real failure.
+4. ✅ A fresh public webhook URL was stood up (Cloudflare quick tunnel)
+   and confirmed reachable (`GET /health` through it returned `200`).
+   **The user still needs to register this URL in the Agora Console**
+   (Notifications → Conversational AI → Receiving URL) for webhook
+   delivery to actually reach it — quick tunnels are ephemeral and the
+   URL changes each time one is started, so this must be redone whenever
+   the tunnel restarts.
+5. ⬜ Join the returned channel from a real Agora-compatible client (not
+   built by this codebase — see §9) and speak several incident
+   statements, including a deliberately conflicting pair.
+6. ⬜ Confirm `POST /agora/webhook` receives the real `agent history`
+   event once the session ends, and that it reconstructs into
+   claims/hypotheses/conflicts/actions/decisions via the existing,
+   unmodified pipeline.
+7. ⬜ Confirm the dashboard (already polling) shows the new state,
+   including at least one fact, one hypothesis, and the deliberate
+   conflict.
+8. ⬜ Propose a Slack update from the resulting incident and confirm the
+   human-approval gate still applies exactly as it does for any other
+   incident (this specific chain — Agora → conflict → Slack → approval —
+   is proven against *mocked* Agora boundaries by
+   `test_full_chain_agora_to_slack_with_mocked_boundaries`, but not yet
+   against a real Agora-delivered transcript).
+9. ⬜ Optionally build a minimal RTM-listening relay to exercise
    `POST /incidents/{id}/agora/transcript-events` for true real-time
-   ingestion during the call, and confirm live claim/conflict/action
-   creation and the existing Slack approval flow all still work exactly
-   as they do for manually-posted utterances.
+   ingestion during the call (see §5) rather than waiting for
+   end-of-session reconstruction.
 
-**This procedure has not been run** — there is no live Agora project or
-client available in this session. Everything in this slice is verified
-down to the mocked-boundary level (unit/integration tests against a fake
-Agora REST/webhook boundary) but the "real Agora smoke test" from the
-slice brief remains outstanding and requires the user (or a follow-up
-session with real credentials) to execute steps 1–7 above.
+Steps 5–9 require a human participant and have not been run. Do not
+treat the live voice path as proven until they are.

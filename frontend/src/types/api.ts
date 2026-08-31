@@ -289,3 +289,23 @@ export interface DemoStatus {
   total_steps: number
   last_step_description: string | null
 }
+
+// ---- Agora live voice (backend/app/services/agora/schemas.py) ----
+
+export type AgoraSessionStatusValue = 'STARTING' | 'ACTIVE' | 'ENDED' | 'FAILED'
+
+export interface AgoraSession {
+  id: string
+  incident_id: string
+  channel: string
+  agent_uid: number
+  agent_id: string | null
+  status: AgoraSessionStatusValue
+  created_at: string
+  ended_at: string | null
+}
+
+export interface StartSessionResponse {
+  session: AgoraSession
+  rtc_token: string
+}

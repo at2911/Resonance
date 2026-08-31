@@ -24,6 +24,7 @@ from app.models.enums import TimelineEventType
 from app.repositories.agora_repository import AgoraRepository, AgoraSessionNotFoundError
 from app.repositories.incident_repository import IncidentNotFoundError
 from app.services.agora.adapter import AgoraAdapter
+from app.services.agora.agent_config import AgentConfigError
 from app.services.agora.dependency import get_agora_repository
 from app.services.agora.pipeline import AgoraProcessingResult, process_normalized_event
 from app.services.agora.rest_client import (
@@ -140,6 +141,8 @@ def create_session(
         return start_session(state_service, agora_repo, rest_client, token_builder, incident_id, req)
     except IncidentNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    except AgentConfigError as e:
+        raise HTTPException(status_code=503, detail=f"Agora agent unavailable: {e}") from e
     except (AgoraRestError, TokenBuildError) as e:
         raise HTTPException(status_code=502, detail=f"Failed to start Agora session: {e}") from e
 

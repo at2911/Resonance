@@ -1,7 +1,20 @@
-"""Agora Conversational AI Engine REST client — /join is VERIFIED (see
-docs/AGORA_INTEGRATION.md §3); /leave's exact body shape is best-effort
-(§1) and should be spot-checked against a live project before relying on
-it. Isolated here so a correction is a one-file change.
+"""Agora Conversational AI Engine REST client.
+
+/join is VERIFIED against a real project (see docs/AGORA_INTEGRATION.md
+§3): a real call returned 200 with a genuine agent_id.
+
+/leave's shape was originally guessed as `POST {base}/leave` with
+agent_id in the body. A real call against it returned a routing 404
+("no Route matched with those values"). A direct docs fetch corrected it
+to `POST {base}/agents/{agent_id}/leave` (agent_id as a path parameter,
+not a body field) — fixed here. A real call against the corrected
+endpoint returned a *different*, structured error
+(`{"reason": "TaskNotFound", ...}`) rather than a routing 404, which is
+strong evidence the endpoint/shape is now correct — the specific agent
+being targeted had already ended on its own (no participant ever joined
+that test session) by the time this was retried, so a full
+successful-leave-on-an-active-session has not been directly observed.
+Isolated here so a further correction, if needed, is a one-file change.
 """
 
 from __future__ import annotations
@@ -49,8 +62,7 @@ class HttpxAgoraConversationalAIClient:
     def leave(self, agent_id: str) -> None:
         try:
             response = httpx.post(
-                f"{self._base_url}/leave",
-                json={"agent_id": agent_id},
+                f"{self._base_url}/agents/{agent_id}/leave",
                 auth=self._auth,
                 timeout=15.0,
             )

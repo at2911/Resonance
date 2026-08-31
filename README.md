@@ -89,11 +89,26 @@ Implemented:
   `event_id`) so redelivery can never double-create a fact/action/
   timeline entry.
 
-  **Not yet done:** the real Agora smoke test (live project, live room,
-  two real speakers) — there is no live Agora project or client available
-  in this environment. Everything up to the mocked-boundary level is
-  tested and verified; §10 of the integration doc is the manual procedure
-  to actually run it against a real Agora account.
+  **Real (not mocked) verification performed:** `POST /incidents/{id}/agora/session`
+  called against a live Agora project with no request body — the backend
+  now builds a complete, working default `asr`/`llm`/`tts` config
+  server-side (`app/services/agora/agent_config.py`: Agora's own ARES
+  ASR, Google Gemini as the LLM via this project's existing
+  `GEMINI_API_KEY`, MiniMax TTS via Agora Managed Key — zero new vendor
+  signups) — returned a real `200` with a genuine `agent_id`, reproduced
+  through the actual dashboard's new "Start AI Incident Commander"
+  button. Ending a session was also verified for real, which caught and
+  fixed a real bug: `/leave` was originally guessed with the wrong URL
+  shape (a live call 404'd); corrected to
+  `POST {base}/agents/{agent_id}/leave` and reverified successfully. See
+  `docs/AGORA_INTEGRATION.md` §3a for the full record.
+
+  **Still not done:** no human has joined a session and spoken — this
+  environment has no microphone/audio-call capability, so ASR
+  transcription, real webhook `agent history` delivery, and the
+  extraction pipeline processing a real (not synthetic) transcript remain
+  unverified. `docs/AGORA_INTEGRATION.md` §10 is the exact remaining
+  procedure and requires a human participant.
 
 - **Frontend Dashboard** — `frontend/` (React + TypeScript + Vite). Real
   components (`IncidentHeader`, `Timeline`, `ClaimCard`, `ConflictCard`,
@@ -148,7 +163,9 @@ cd backend
 pytest -v
 ```
 
-121/121 tests pass, covering everything above plus:
+141/141 tests pass (up from 121 — 14 for backend-driven Demo Mode, 6 for
+the Agora default ASR/LLM/TTS construction and the real-request-shaped
+`AgentConfigError`/503 path), covering everything above plus:
 
 - (Agora) event normalization (deterministic dedup-friendly IDs for
   webhook history entries, spec-shaped live-relay events), speaker
@@ -213,9 +230,10 @@ not on `http://127.0.0.1:8000`.
 Run tests / type-check / build:
 
 ```bash
-npm run test      # 21/21 — component tests plus a full propose -> approve
+npm run test      # 32/32 — component tests, a full propose -> approve
                    # -> execute -> reject flow against a stateful mock of
-                   # the API layer
+                   # the API layer, Demo Mode controls, and Agora session
+                   # start/error/end
 npm run build      # tsc -b && vite build
 npm run lint
 ```
@@ -223,8 +241,12 @@ npm run lint
 Manually verified end-to-end with headless Chromium against the real,
 running backend (not mocked): incident creation, the dashboard rendering
 real facts/hypotheses/conflicts/actions/gaps/timeline, the evidence
-provenance toggle, and a Slack-unconfigured proposal producing a graceful
-error banner instead of a crash. Zero browser console errors.
+provenance toggle, a Slack-unconfigured proposal producing a graceful
+error banner instead of a crash, the full Demo Mode start/pause/resume/
+reset cycle, and — against a real live Agora project, not mocked —
+clicking "Start AI Incident Commander" and seeing the real channel/agent
+ID/RTC token appear (see `docs/AGORA_INTEGRATION.md` §3a). Zero browser
+console errors in any of these runs.
 
 `frontend/demo.html` remains as a dependency-free fallback — open it
 directly in a browser (no `npm install` needed) if the real frontend can't

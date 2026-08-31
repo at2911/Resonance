@@ -65,6 +65,28 @@ class FakeGapLLMClient:
         }
 
 
+@pytest.fixture(autouse=True)
+def pinned_gemini_settings(monkeypatch):
+    """session_service.start_session() falls back to
+    agent_config.build_default_agent_properties(), which needs
+    GEMINI_API_KEY — calling it via the plain get_settings() function
+    (not a FastAPI Depends(), so app.dependency_overrides can't isolate
+    it) means every test in this file that starts a session would
+    otherwise depend on whatever's actually in the real, gitignored
+    backend/.env. Pinned here, autouse, so nothing in this file is
+    sensitive to local environment state — matching the isolation
+    already required of test_default_provider_is_anthropic and
+    test_webhook_history_with_extraction_unavailable_preserves_raw_events.
+    """
+    from app.config import get_settings
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.6-flash")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
 @pytest.fixture
 def state_service():
     return IncidentStateService(InMemoryIncidentRepository())
@@ -407,6 +429,113 @@ def test_end_session_calls_agora_leave_and_records_timeline_event(wired_client, 
 def test_end_session_for_unknown_session_id_returns_404(wired_client, incident):
     r = wired_client.post(f"/incidents/{incident.id}/agora/session/does-not-exist/end")
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------
+# Default ASR/LLM/TTS construction (agent_config.py) — real Agora live
+# path, verified against current Agora docs (docs/AGORA_INTEGRATION.md §3)
+# ---------------------------------------------------------------------
+
+
+def test_build_default_agent_properties_matches_verified_schema():
+    from app.config import Settings
+    from app.services.agora.agent_config import AGORA_INCIDENT_COMMANDER_SYSTEM_PROMPT, build_default_agent_properties
+
+    settings = Settings(gemini_api_key="real-looking-key", gemini_model="gemini-3.6-flash")
+    props = build_default_agent_properties(settings)
+
+    assert props["asr"] == {"vendor": "ares", "language": "en-US"}
+
+    assert props["llm"]["style"] == "gemini"
+    assert props["llm"]["params"]["model"] == "gemini-3.6-flash"
+    assert "generativelanguage.googleapis.com" in props["llm"]["url"]
+    assert "gemini-3.6-flash" in props["llm"]["url"]
+    assert "key=real-looking-key" in props["llm"]["url"]
+    assert props["llm"]["system_messages"][0]["parts"][0]["text"] == AGORA_INCIDENT_COMMANDER_SYSTEM_PROMPT
+
+    assert props["tts"]["credential_mode"] == "managed"
+    assert props["tts"]["vendor"] == "minimax"
+    assert "key" not in props["tts"]["params"]
+    assert "group_id" not in props["tts"]["params"]
+
+
+def test_system_prompt_never_claims_root_cause_authority():
+    from app.services.agora.agent_config import AGORA_INCIDENT_COMMANDER_SYSTEM_PROMPT
+
+    text = AGORA_INCIDENT_COMMANDER_SYSTEM_PROMPT.lower()
+    assert "never present an unverified hypothesis as a confirmed root cause" in text
+    assert "explicit human approval" in text
+    assert "do not invent evidence" in text
+
+
+def test_build_default_agent_properties_raises_when_gemini_key_missing():
+    from app.config import Settings
+    from app.services.agora.agent_config import AgentConfigError, build_default_agent_properties
+
+    settings = Settings(gemini_api_key="")
+    with pytest.raises(AgentConfigError):
+        build_default_agent_properties(settings)
+
+
+def test_session_start_falls_back_to_defaults_when_not_supplied(state_service, agora_repo, incident):
+    """Proves session_service actually calls build_default_agent_properties
+    when the request omits asr/llm/tts — inspects what was really sent to
+    the Agora REST client's join(), not just that the call succeeded."""
+    shared_fake_client = FakeAgoraRestClient()
+    app.dependency_overrides[get_incident_state_service] = lambda: state_service
+    app.dependency_overrides[get_agora_repository] = lambda: agora_repo
+    app.dependency_overrides[get_rest_client] = lambda: shared_fake_client
+    app.dependency_overrides[get_token_builder] = lambda: FakeTokenBuilder()
+    try:
+        client = TestClient(app)
+        r = client.post(f"/incidents/{incident.id}/agora/session", json={"agent_uid": 1})
+        assert r.status_code == 200
+    finally:
+        app.dependency_overrides.clear()
+
+    assert len(shared_fake_client.joined) == 1
+    sent_properties = shared_fake_client.joined[0]["properties"]
+    assert sent_properties["asr"] == {"vendor": "ares", "language": "en-US"}
+    assert sent_properties["llm"]["style"] == "gemini"
+    assert sent_properties["tts"]["vendor"] == "minimax"
+
+
+def test_session_start_respects_explicit_asr_llm_tts_override(wired_client, incident):
+    """A caller supplying its own asr/llm/tts must have those honored
+    verbatim, not silently replaced by the defaults."""
+    custom_llm = {"url": "https://example.com/custom", "style": "openai", "params": {"model": "custom-model"}}
+    r = wired_client.post(
+        f"/incidents/{incident.id}/agora/session",
+        json={
+            "agent_uid": 1,
+            "asr": {"vendor": "azure", "language": "en-US"},
+            "llm": custom_llm,
+            "tts": {"vendor": "azure", "params": {}},
+        },
+    )
+    assert r.status_code == 200
+
+
+def test_create_session_returns_503_when_gemini_key_missing_and_no_override_supplied(
+    state_service, agora_repo, incident, monkeypatch
+):
+    from app.config import get_settings
+
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    get_settings.cache_clear()
+
+    app.dependency_overrides[get_incident_state_service] = lambda: state_service
+    app.dependency_overrides[get_agora_repository] = lambda: agora_repo
+    app.dependency_overrides[get_rest_client] = lambda: FakeAgoraRestClient()
+    app.dependency_overrides[get_token_builder] = lambda: FakeTokenBuilder()
+    try:
+        client = TestClient(app)
+        r = client.post(f"/incidents/{incident.id}/agora/session", json={"agent_uid": 1})
+        assert r.status_code == 503
+        assert "Agora agent unavailable" in r.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
+        get_settings.cache_clear()
 
 
 # ---------------------------------------------------------------------

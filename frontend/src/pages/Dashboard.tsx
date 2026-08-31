@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ActionCard } from '../components/ActionCard'
+import { AgoraControls } from '../components/AgoraControls'
 import { ApprovalModal } from '../components/ApprovalModal'
 import { ClaimCard } from '../components/ClaimCard'
 import { ClarityScore } from '../components/ClarityScore'
@@ -137,6 +138,8 @@ export function Dashboard({ incidentId }: { incidentId: string }) {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <Timeline events={incident.timeline} />
+
+          <AgoraControls incidentId={incidentId} />
 
           <div className="panel">
             <h2>Log Utterance</h2>
