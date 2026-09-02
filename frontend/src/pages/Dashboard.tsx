@@ -7,6 +7,7 @@ import { ClarityScore } from '../components/ClarityScore'
 import { ConflictCard } from '../components/ConflictCard'
 import { IncidentHeader } from '../components/IncidentHeader'
 import { InformationGaps } from '../components/InformationGaps'
+import { RiskCard } from '../components/RiskCard'
 import { Timeline } from '../components/Timeline'
 import { useIncident } from '../hooks/useIncident'
 import { ApiError, decideExternalAction, executeExternalAction, postUtterance, proposeSlackUpdate } from '../services/api'
@@ -26,6 +27,7 @@ export function Dashboard({ incidentId }: { incidentId: string }) {
   )
   const conflicts = useMemo(() => (incident ? Object.values(incident.conflicts) : []), [incident])
   const actions = useMemo(() => (incident ? Object.values(incident.actions) : []), [incident])
+  const risks = useMemo(() => (incident ? Object.values(incident.risks) : []), [incident])
   const pendingExternalActions = useMemo(
     () =>
       incident
@@ -203,6 +205,17 @@ export function Dashboard({ incidentId }: { incidentId: string }) {
                 <div className="empty">No actions assigned.</div>
               ) : (
                 actions.map((a) => <ActionCard key={a.id} action={a} />)
+              )}
+            </div>
+          </div>
+
+          <div className="panel">
+            <h2>Risks</h2>
+            <div className="body">
+              {risks.length === 0 ? (
+                <div className="empty">No risks identified.</div>
+              ) : (
+                risks.map((r) => <RiskCard key={r.id} risk={r} />)
               )}
             </div>
           </div>

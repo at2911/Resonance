@@ -41,7 +41,16 @@ function baseIncident(): Incident {
     actions: {},
     conflicts: {},
     information_gaps: {},
-    risks: {},
+    risks: {
+      r1: {
+        id: 'r1',
+        description: 'Rollback may cause data inconsistency',
+        severity: 'HIGH',
+        confidence: 0.6,
+        mitigation: null,
+        status: 'OPEN',
+      },
+    },
     timeline: [],
     external_actions: {},
   }
@@ -126,6 +135,11 @@ describe('Dashboard — end-to-end approval gate through the real UI', () => {
   it('renders the confirmed fact from backend state', async () => {
     render(<Dashboard incidentId="inc1" />)
     expect(await screen.findByText(/Payment API is returning 503 errors/)).toBeInTheDocument()
+  })
+
+  it('renders risks from backend state in their own panel', async () => {
+    render(<Dashboard incidentId="inc1" />)
+    expect(await screen.findByText(/Rollback may cause data inconsistency/)).toBeInTheDocument()
   })
 
   it('never shows a proposal until "Propose Slack Update" is clicked', async () => {
