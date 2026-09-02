@@ -1,8 +1,39 @@
-# Dangling Pointers — Voice AI Incident Commander
+# Resonance — Voice AI Incident Commander
 
-EchoSphere 2026 hackathon submission (PS41). See project spec for full
-product/architecture rationale. This README covers only how to run what
-exists so far.
+**EchoSphere 2026 hackathon submission (PS41).**
+
+Most incident-response tools log a call as one flat transcript. Resonance
+listens instead — live through a real Agora voice agent, or typed in — and
+turns what's said into a structured, trustworthy incident record: every
+statement tagged FACT, HYPOTHESIS, DECISION, ACTION or RISK with its own
+confidence and evidence, genuine contradictions between two people's
+claims caught automatically (never silently resolved), and a live
+Clarity Score tracking how well the team actually understands the
+incident. Nothing ever reaches a real external channel — Slack included —
+without a human explicitly approving it, a rule enforced on the server,
+not just hidden behind a UI.
+
+Everything below is engineering documentation, written the way it was
+built: every integration is marked as either genuinely verified against a
+real service, or explicitly not yet — nothing on this page describes
+something that was only assumed to work.
+
+## Highlights
+
+- 🎙 **Real voice input** — a live Agora Conversational AI agent (Google
+  Gemini as its LLM), verified against a real session — see **Agora
+  Integration** below.
+- 🧠 **Epistemic safety** — facts and hypotheses are never mixed; a claim
+  only becomes `CONFIRMED` when real stated evidence backs it.
+- ⚠️ **Contradiction detection** — a two-stage engine (deterministic
+  candidate filter, then LLM judgment on meaning) flags genuine
+  disagreements between claims without ever picking a silent winner.
+- ✅ **Human approval gate** — the AI can draft a Slack update; only a
+  person can send it. Enforced server-side, idempotent, never double-sent.
+- ▶️ **Deterministic Demo Mode** — a scripted, judge-ready 9-step replay
+  through the real backend, pausable/resumable, no microphone required.
+- 🧪 **141 backend + 37 frontend tests passing**, plus real (not mocked)
+  verification against the live Gemini, Slack, and Agora APIs — see below.
 
 ## Status
 
@@ -68,6 +99,26 @@ Implemented:
   lock was tightened this slice to allow `FAILED → EXECUTING` (retry)
   while still permanently blocking re-execution after `SUCCEEDED` or a
   concurrent double-call while `EXECUTING`.
+
+  **Real (not mocked) verification performed:** a real `chat.postMessage`
+  call was made against a live Slack workspace and channel using a
+  minimal-scope bot token (`chat:write` only — deliberately no read scope
+  requested). The full propose → approve → send chain was driven for
+  real and produced a genuine message in the channel; a second execute
+  attempt against the same already-`SUCCEEDED` action was correctly
+  rejected by the server without re-sending, proving the duplicate-
+  execution guard holds against a real call, not just the test fakes.
+
+- **Backend-driven Demo Mode** (spec §19) — `backend/app/services/demo/`.
+  A fixed, deterministic 9-step script that calls the exact same
+  `IncidentStateService` methods a real incident does — nothing about it
+  is a separate fake path. Playback is lazily advanced by polling
+  (`GET /demo/status`), not a background thread, so it only moves forward
+  while someone is actually watching. `POST /demo/{start,pause,resume,reset}`
+  give explicit human control over playback; the script deliberately halts
+  itself immediately before proposing the Slack update, so even a
+  rehearsed demo still requires a real click through the human-approval
+  gate to finish.
 - **Agora Integration** (P0 #6/slice 6) — `backend/app/services/agora/` +
   `backend/app/api/agora.py`. See **`docs/AGORA_INTEGRATION.md`** for the
   verified API contract and an important architectural finding: Agora's
@@ -112,11 +163,14 @@ Implemented:
 
 - **Frontend Dashboard** — `frontend/` (React + TypeScript + Vite). Real
   components (`IncidentHeader`, `Timeline`, `ClaimCard`, `ConflictCard`,
-  `ActionCard`, `EvidencePanel`, `ApprovalModal`, `ClarityScore`,
-  `InformationGaps`) talking to the actual backend API — every function in
-  `services/api.ts` was mapped from the real route files, nothing invented.
-  `frontend/demo.html` (a single-file, dependency-free fallback built for
-  the live demo) is kept alongside it untouched. See **Frontend** below.
+  `ActionCard`, `RiskCard`, `EvidencePanel`, `ApprovalModal`, `ClarityScore`,
+  `InformationGaps`, `AgoraControls`, `DemoControls`) talking to the actual
+  backend API — every function in `services/api.ts` was mapped from the
+  real route files, nothing invented. `RiskCard` mirrors `ActionCard`'s
+  shape (severity, status, description, confidence %, mitigation when
+  stated) and reads real `incident.risks` state. `frontend/demo.html` (a
+  single-file, dependency-free fallback) is kept alongside it untouched.
+  See **Frontend** below.
 - **Provider-agnostic LLM selection** — `LLM_PROVIDER=anthropic` (default)
   or `gemini`, so development doesn't require paid Anthropic usage. See
   **`docs/GEMINI_PROVIDER.md`** for the verified `google-genai` SDK
@@ -138,12 +192,17 @@ Implemented:
   object. Fixed by bumping `anthropic` to `0.125.0` (same `0.x` line,
   chosen over the new `1.x` major to minimize risk) and `pydantic` to
   `2.12.5` (same v2 major); full suite re-verified after both bumps.
-  **The real Gemini API has not been called** — see that doc's closing
-  section for the manual verification procedure.
+  **The real Gemini API has since been verified end to end**: six real
+  requests across `GeminiExtractionClient` (fact and hypothesis paths) and
+  `GeminiContradictionClient` (positive and negative cases), plus a full
+  `POST /incidents/{id}/utterances` HTTP round trip that exercised the
+  Gap Engine's real Gemini call too — see `docs/GEMINI_PROVIDER.md` for
+  the full record, including the live `gemini-2.5-flash` → `404` that
+  caught a wrong default model and the `gemini-3.6-flash` fix.
 
-Not yet implemented: voice summaries, backend-driven demo replay mode
-(start/pause/resume/reset). These land in subsequent slices per the
-priority order in the spec.
+Not yet implemented: spoken voice status summaries (the AI currently
+listens and reasons over voice, but doesn't yet speak a generated summary
+back). Lands in a subsequent slice per the priority order in the spec.
 
 ## Backend
 
@@ -196,10 +255,14 @@ exercise FastAPI's actual dependency-resolution order): an unsigned Agora
 webhook request was returning a misleading `503` about LLM configuration
 instead of `401 Unauthorized`, because the extraction-service dependency
 was resolved before the signature check ran. Fixed — see
-`docs/AGORA_INTEGRATION.md` §5. **The real Agora smoke test (live project,
-live room, real speech) has not been run** — no live Agora credentials or
-client are available in this environment; see that doc's §10 for the
-manual procedure.
+`docs/AGORA_INTEGRATION.md` §5. **Session start/end have since been
+verified against a live Agora project** (real `200`s, a genuine
+`agent_id`, correct `ACTIVE`/`ENDED` transitions — see that doc's §3a).
+**What's still unverified: a human joining the channel and speaking** —
+ASR transcription, real webhook `agent history` delivery, and the
+extraction pipeline processing a real transcript all require a live
+voice participant this environment cannot provide; see §10 for the exact
+remaining procedure.
 
 Extraction/contradiction/gap tests all run against fake LLM clients at the
 same interfaces the real Anthropic clients implement (`LLMExtractionClient`,
@@ -230,17 +293,17 @@ not on `http://127.0.0.1:8000`.
 Run tests / type-check / build:
 
 ```bash
-npm run test      # 32/32 — component tests, a full propose -> approve
+npm run test      # 37/37 — component tests, a full propose -> approve
                    # -> execute -> reject flow against a stateful mock of
-                   # the API layer, Demo Mode controls, and Agora session
-                   # start/error/end
+                   # the API layer, Demo Mode controls, the Risks panel,
+                   # and Agora session start/error/end
 npm run build      # tsc -b && vite build
 npm run lint
 ```
 
 Manually verified end-to-end with headless Chromium against the real,
 running backend (not mocked): incident creation, the dashboard rendering
-real facts/hypotheses/conflicts/actions/gaps/timeline, the evidence
+real facts/hypotheses/conflicts/actions/risks/gaps/timeline, the evidence
 provenance toggle, a Slack-unconfigured proposal producing a graceful
 error banner instead of a crash, the full Demo Mode start/pause/resume/
 reset cycle, and — against a real live Agora project, not mocked —

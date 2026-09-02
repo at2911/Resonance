@@ -14,7 +14,7 @@ from app.config import get_settings
 
 logging.basicConfig(level=get_settings().log_level)
 
-app = FastAPI(title="Dangling Pointers — Incident Commander", version="0.1.0")
+app = FastAPI(title="Resonance — Incident Commander", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
