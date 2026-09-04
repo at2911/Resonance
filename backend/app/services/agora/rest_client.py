@@ -16,14 +16,13 @@ that test session) by the time this was retried, so a full
 successful-leave-on-an-active-session has not been directly observed.
 Isolated here so a further correction, if needed, is a one-file change.
 
-/speak: VERIFIED (search synthesis only, not direct fetch — the docs page
-itself redirects automated fetches to an index, the same JS-rendering
-limitation /join originally hit). Two independent search-result summaries
-agree on `POST {base}/agents/{agent_id}/speak` with body
-`{"text": str, "priority": "INTERRUPT"|"APPEND"|"IGNORE", "interruptable": bool}`,
-consistent with the separately-confirmed `/interrupt` endpoint's own
-interrupt/append/ignore vocabulary. See docs/AGORA_INTEGRATION.md §11 for
-the full record, including the result of the first real call against it.
+/speak: VERIFIED (real call, real 200) — POST {base}/agents/{agent_id}/speak
+with body `{"text": str, "priority": "INTERRUPT"|"APPEND"|"IGNORE",
+"interruptable": bool}`. Originally only search-synthesis confidence
+(the docs page redirects automated fetches to an index, the same
+JS-rendering limitation /join originally hit); the guessed shape turned
+out correct on the first real call, unlike /leave, which needed a real
+correction. See docs/AGORA_INTEGRATION.md §11a for the full record.
 """
 
 from __future__ import annotations

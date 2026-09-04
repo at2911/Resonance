@@ -210,13 +210,17 @@ Implemented:
   asks the live Agora agent to speak the incident's current status out
   loud. Reuses the exact same deterministic `SlackMessageComposer` text a
   human already reviews before a Slack send — no separate wording is
-  invented for voice. The `/speak` endpoint shape is search-synthesis
-  verified (two independent sources, corroborated by the directly-fetched
-  `/interrupt` endpoint's shared vocabulary), not yet confirmed by a real
-  call — a live attempt this session was blocked by a genuine `500` from
-  Agora's own model-service infrastructure (not a bug in this code; it
-  blocked the already-verified `/join` too). See
-  `docs/AGORA_INTEGRATION.md` §11 for the exact retry procedure.
+  invented for voice. The `/speak` endpoint (search-synthesis researched,
+  same "never invent an API" standard as the rest of this integration) is
+  now **verified by a real call**: a live attempt earlier in the session
+  was genuinely blocked by a transient `500` from Agora's own
+  infrastructure, then retried later the same session after the outage
+  cleared — real `200`, a real spoken-text response derived from live
+  incident state, reproduced through the actual dashboard via headless
+  Chromium. See `docs/AGORA_INTEGRATION.md` §11a for the full record,
+  including the one gap that still requires a human: confirming the
+  agent's TTS was actually *audible*, not just that the REST call
+  succeeded.
 - **Participants panel** (frontend) — the dashboard now surfaces
   `incident.participants` (name, recognized role, role confidence, a 🎙
   badge for anyone identified via a real Agora voice session) instead of

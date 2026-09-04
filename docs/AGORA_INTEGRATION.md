@@ -438,11 +438,16 @@ confirmed state. The response body (`SpeakSummaryResponse.spoken_text`)
 always echoes the exact text sent to Agora, so it's visible even without
 audio (the dashboard's "Speak Summary" button shows it inline).
 
-**Endpoint contract — VERIFIED (search synthesis only, not direct fetch).**
-The `rest-api/agent/speak` docs page itself redirects automated fetches to
-an index page, the exact same JS-rendering limitation that originally hit
-`/join` (§1) before a real call confirmed the corrected shape. Two
-independent search-result summaries agree:
+**Endpoint contract — VERIFIED (real call, confirmed 200).** Originally
+only search-synthesis confidence (the `rest-api/agent/speak` docs page
+itself redirects automated fetches to an index, the same JS-rendering
+limitation that originally hit `/join` in §1) from two independent
+search-result summaries, corroborated by the separately *directly*-fetched
+`develop/interrupt-agent` page's identical interrupt/append/ignore
+vocabulary for the related `POST {base}/agents/{agent_id}/interrupt`
+endpoint. The exact shape guessed from that research turned out to be
+correct on the first real call — no correction was needed, unlike `/leave`
+in §1:
 
 ```
 POST {base}/agents/{agent_id}/speak
@@ -453,42 +458,45 @@ POST {base}/agents/{agent_id}/speak
 }
 ```
 
-This is corroborated by the separately, *directly*-fetched
-`develop/interrupt-agent` page, which documents the identical
-interrupt/append/ignore vocabulary for the related (and now also
-implemented) `POST {base}/agents/{agent_id}/interrupt` endpoint — the two
-features sharing vocabulary is real evidence they're part of the same
-priority-handling subsystem, not proof of the exact JSON field names.
 `priority=APPEND` is this integration's deliberate default (not
 `INTERRUPT`): a human mid-sentence on the call is never talked over — the
 agent finishes its current turn, then speaks the summary.
 
-**What has NOT been verified: a real call against this endpoint.** A live
-end-to-end attempt was made this session — real incident, real confirmed
-claim, `POST /incidents/{id}/agora/session` with real credentials — and
-the underlying `/join` call itself (the already-verified endpoint from
-§3a, unrelated to this new work) failed three times over ~30 seconds with
-a real `500` from Agora's own infrastructure:
+### 11a. Real verification against a live Agora project
 
-```json
-{"detail": "The model service is temporarily unavailable. Retry later.", "reason": "InternalError"}
-```
+A live end-to-end attempt earlier in this session was genuinely blocked:
+`POST /incidents/{id}/agora/session` (the already-verified `/join`
+endpoint from §3a, unrelated to this new work) failed three times over
+~30 seconds with a real `500` from Agora's own infrastructure
+(`{"detail": "The model service is temporarily unavailable. Retry
+later.", "reason": "InternalError"}`) — a genuine outage/rate-limit on
+Agora's (or the underlying Gemini vendor's) side, not a bug in this code.
+This was documented honestly rather than worked around.
 
-This is a genuine outage/rate-limit on Agora's (or the underlying Gemini
-vendor's) side, not a bug introduced by this change — it blocked even the
-previously-verified `/join` path, before `/speak` could be reached at
-all. **Until a session can be started again, `/speak`'s exact field names
-remain at search-synthesis confidence, not confirmed by a real call** —
-treat it the same way the original `/join` shape was treated before §3a's
-real verification: implemented and unit-tested against fakes (146/146
-backend tests), architecturally sound, but the literal JSON Agora expects
-has not been proven against a live response. If a real call 400s on field
-names, `rest_client.py`'s `speak()` is the one-file fix, exactly as
-`leave()` was corrected in §1.
+**Retried later the same session, after the outage cleared, and fully
+succeeded:**
 
-**Manual verification procedure once Agora's service recovers:**
-1. `POST /incidents/{id}/agora/session` — confirm real `200`, capture `agent_id`.
-2. `POST /incidents/{id}/agora/session/{session_id}/speak-summary` — record the raw HTTP status and body.
-3. If `200`: update this section's confidence label to VERIFIED (real call), noting the response shape actually returned.
-4. If `4xx`/`5xx` naming a field: correct `rest_client.py::speak()` to match, exactly as `/leave` was corrected in §1, and re-verify.
-5. Ideally, a human actually listening in the channel (§10) confirms the agent's TTS audibly said the composed text — this closes the loop `/join`'s real-speech gap (§10) never has.
+- `POST /incidents/{id}/agora/session` with real credentials → real `200`,
+  genuine `agent_id` (`A44CV24CN54FP57NN98EK44VY66CD66L`).
+- A real confirmed claim ("Payment API is returning 503 errors") was added
+  first, so the composed text would reflect real state, not a placeholder.
+- `POST /incidents/{id}/agora/session/{session_id}/speak-summary` → real
+  `200`, with `spoken_text` exactly matching
+  `SlackMessageComposer.compose(incident)`'s real output:
+  `"Payment API is returning 503 errors.\nRoot cause remains
+  unconfirmed.\nNo investigation actions are currently open."` — proving
+  both that the endpoint accepted the guessed field names outright and
+  that the composed text is genuinely derived from live incident state,
+  not hardcoded.
+- Reproduced through the actual dashboard (not curl) via headless
+  Chromium: clicked "Start AI Incident Commander" (real session, real
+  `agent_id` displayed), then "🔊 Speak Summary", and the exact spoken
+  text appeared inline in the UI, matching the direct-API result.
+- The session was cleanly ended afterward via "End Session".
+
+**What this does NOT verify:** no human was listening in the channel, so
+whether the agent's TTS *audibly* said the text out loud (as opposed to
+the REST call being accepted) remains unconfirmed — the same gap §10
+already documents for the rest of the voice path, now also true here.
+That step still requires a live human participant this environment cannot
+provide.
