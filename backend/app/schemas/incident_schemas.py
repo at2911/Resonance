@@ -38,6 +38,14 @@ class AddParticipantRequest(BaseModel):
     role_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
+class CorrectParticipantRoleRequest(BaseModel):
+    role: ParticipantRole
+    corrected_by: Optional[str] = None
+    """Free-text identifier of whoever made the correction (e.g. the
+    dashboard's IC name) — recorded in the timeline note, not enforced as
+    a real identity/auth concept anywhere else in this MVP."""
+
+
 class AddClaimRequest(BaseModel):
     text: str
     normalized_claim: str

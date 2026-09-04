@@ -30,6 +30,7 @@ from app.schemas.incident_schemas import (
     AddInformationGapRequest,
     AddParticipantRequest,
     AddRiskRequest,
+    CorrectParticipantRoleRequest,
     CreateIncidentRequest,
     DecideExternalActionRequest,
     ProposeExternalActionRequest,
@@ -92,6 +93,21 @@ def add_participant(
 ):
     return _handle(
         lambda: service.add_participant(incident_id, req.name, req.role, req.role_confidence)
+    )
+
+
+@router.post("/{incident_id}/participants/{participant_id}/correct-role", response_model=Participant)
+def correct_participant_role(
+    incident_id: str,
+    participant_id: str,
+    req: CorrectParticipantRoleRequest,
+    service: IncidentStateService = ServiceDep,
+):
+    """A human overriding the AI's recognized role — always applies and
+    always sets confidence to 1.0 (service.correct_participant_role),
+    unlike the extraction pipeline's own confidence-gated auto-update."""
+    return _handle(
+        lambda: service.correct_participant_role(incident_id, participant_id, req.role, req.corrected_by)
     )
 
 

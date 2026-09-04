@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ApiError, endAgoraSession, startAgoraSession } from '../services/api'
+import { ApiError, endAgoraSession, speakAgoraSummary, startAgoraSession } from '../services/api'
 import type { StartSessionResponse } from '../types/api'
 
 /** Starts/stops a real Agora Conversational AI session for this incident.
@@ -17,6 +17,7 @@ export function AgoraControls({ incidentId }: { incidentId: string }) {
   const [session, setSession] = useState<StartSessionResponse | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [spokenText, setSpokenText] = useState<string | null>(null)
 
   async function handleStart() {
     setBusy(true)
@@ -38,6 +39,21 @@ export function AgoraControls({ incidentId }: { incidentId: string }) {
     try {
       await endAgoraSession(incidentId, session.session.id)
       setSession(null)
+      setSpokenText(null)
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not reach the backend')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleSpeak() {
+    if (!session) return
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await speakAgoraSummary(incidentId, session.session.id)
+      setSpokenText(result.spoken_text)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not reach the backend')
     } finally {
@@ -94,9 +110,19 @@ export function AgoraControls({ incidentId }: { incidentId: string }) {
                 rows={2}
               />
             </div>
-            <button className="btn reject small" style={{ marginTop: 8 }} disabled={busy} onClick={handleEnd} data-testid="btn-agora-end">
-              End Session
-            </button>
+            <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+              <button className="btn secondary small" disabled={busy} onClick={handleSpeak} data-testid="btn-agora-speak-summary">
+                🔊 Speak Summary
+              </button>
+              <button className="btn reject small" disabled={busy} onClick={handleEnd} data-testid="btn-agora-end">
+                End Session
+              </button>
+            </div>
+            {spokenText && (
+              <div className="evidence" style={{ marginTop: 6 }} data-testid="agora-spoken-text">
+                Asked the agent to say: “{spokenText}”
+              </div>
+            )}
           </>
         )}
         {error && <div style={{ color: 'var(--critical)', fontSize: 12.5, marginTop: 6 }}>{error}</div>}

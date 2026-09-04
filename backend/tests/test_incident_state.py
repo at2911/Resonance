@@ -47,6 +47,54 @@ def test_add_participant_role_recognition(service, incident):
     assert stored.participants[p.id].role_confidence == 0.8
 
 
+def test_correct_participant_role_always_applies_and_sets_confidence_to_one(service, incident):
+    """Unlike update_role_if_more_confident (the extraction pipeline's
+    confidence-gated auto-update), a human correction always applies,
+    even overriding an existing HIGHER-confidence role — a human is
+    definitionally more authoritative than an AI guess."""
+    p = service.add_participant(incident.id, "Alice", ParticipantRole.BACKEND_ENGINEER, 0.95)
+
+    corrected = service.correct_participant_role(incident.id, p.id, ParticipantRole.INCIDENT_COMMANDER, "ic-dashboard")
+
+    assert corrected.role == ParticipantRole.INCIDENT_COMMANDER
+    assert corrected.role_confidence == 1.0
+    stored = service.get(incident.id)
+    assert stored.participants[p.id].role == ParticipantRole.INCIDENT_COMMANDER
+    assert stored.participants[p.id].role_confidence == 1.0
+
+
+def test_correct_participant_role_records_a_timeline_event(service, incident):
+    p = service.add_participant(incident.id, "Bob", ParticipantRole.UNKNOWN, 0.0)
+    service.correct_participant_role(incident.id, p.id, ParticipantRole.SRE, "ic-dashboard")
+
+    stored = service.get(incident.id)
+    corrected_events = [e for e in stored.timeline if e.event_type.value == "PARTICIPANT_ROLE_CORRECTED"]
+    assert len(corrected_events) == 1
+    assert "Bob" in corrected_events[0].content
+    assert "UNKNOWN" in corrected_events[0].content
+    assert "SRE" in corrected_events[0].content
+
+
+def test_correct_participant_role_a_human_correction_still_blocks_a_later_lower_confidence_auto_update(service, incident):
+    """Proves the two methods actually interact the way
+    update_role_if_more_confident's own docstring promises: a human
+    correction at 1.0 confidence can never be overwritten by a
+    subsequent extraction-pipeline guess."""
+    p = service.add_participant(incident.id, "Alice", ParticipantRole.UNKNOWN, 0.0)
+    service.correct_participant_role(incident.id, p.id, ParticipantRole.INCIDENT_COMMANDER, "ic-dashboard")
+
+    service.update_role_if_more_confident(incident.id, p.id, ParticipantRole.BACKEND_ENGINEER, 0.9)
+
+    stored = service.get(incident.id)
+    assert stored.participants[p.id].role == ParticipantRole.INCIDENT_COMMANDER
+    assert stored.participants[p.id].role_confidence == 1.0
+
+
+def test_correct_participant_role_for_unknown_participant_raises(service, incident):
+    with pytest.raises(KeyError):
+        service.correct_participant_role(incident.id, "does-not-exist", ParticipantRole.SRE)
+
+
 def test_add_fact_claim(service, incident):
     claim = service.add_claim(
         incident.id,

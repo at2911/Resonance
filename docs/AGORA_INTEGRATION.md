@@ -422,3 +422,73 @@ this environment has no microphone/audio-call capability.
 
 Steps 5–9 require a human participant and have not been run. Do not
 treat the live voice path as proven until they are.
+
+## 11. Voice summaries — "speak the current status" (spec's remaining P0 item)
+
+Lets a human (or the dashboard, on their behalf) ask the live agent to
+speak the incident's current status out loud, via `POST
+/incidents/{id}/agora/session/{id}/speak-summary`
+(`app/services/agora/session_service.py::speak_summary`).
+
+**What text gets spoken:** the exact same deterministic
+`SlackMessageComposer.compose(incident)` output a human already reviews
+before a Slack send — no separate LLM call composes different words for
+voice than for Slack, and no wording is invented independently of
+confirmed state. The response body (`SpeakSummaryResponse.spoken_text`)
+always echoes the exact text sent to Agora, so it's visible even without
+audio (the dashboard's "Speak Summary" button shows it inline).
+
+**Endpoint contract — VERIFIED (search synthesis only, not direct fetch).**
+The `rest-api/agent/speak` docs page itself redirects automated fetches to
+an index page, the exact same JS-rendering limitation that originally hit
+`/join` (§1) before a real call confirmed the corrected shape. Two
+independent search-result summaries agree:
+
+```
+POST {base}/agents/{agent_id}/speak
+{
+  "text": "<the message to speak>",
+  "priority": "INTERRUPT" | "APPEND" | "IGNORE",
+  "interruptable": true | false
+}
+```
+
+This is corroborated by the separately, *directly*-fetched
+`develop/interrupt-agent` page, which documents the identical
+interrupt/append/ignore vocabulary for the related (and now also
+implemented) `POST {base}/agents/{agent_id}/interrupt` endpoint — the two
+features sharing vocabulary is real evidence they're part of the same
+priority-handling subsystem, not proof of the exact JSON field names.
+`priority=APPEND` is this integration's deliberate default (not
+`INTERRUPT`): a human mid-sentence on the call is never talked over — the
+agent finishes its current turn, then speaks the summary.
+
+**What has NOT been verified: a real call against this endpoint.** A live
+end-to-end attempt was made this session — real incident, real confirmed
+claim, `POST /incidents/{id}/agora/session` with real credentials — and
+the underlying `/join` call itself (the already-verified endpoint from
+§3a, unrelated to this new work) failed three times over ~30 seconds with
+a real `500` from Agora's own infrastructure:
+
+```json
+{"detail": "The model service is temporarily unavailable. Retry later.", "reason": "InternalError"}
+```
+
+This is a genuine outage/rate-limit on Agora's (or the underlying Gemini
+vendor's) side, not a bug introduced by this change — it blocked even the
+previously-verified `/join` path, before `/speak` could be reached at
+all. **Until a session can be started again, `/speak`'s exact field names
+remain at search-synthesis confidence, not confirmed by a real call** —
+treat it the same way the original `/join` shape was treated before §3a's
+real verification: implemented and unit-tested against fakes (146/146
+backend tests), architecturally sound, but the literal JSON Agora expects
+has not been proven against a live response. If a real call 400s on field
+names, `rest_client.py`'s `speak()` is the one-file fix, exactly as
+`leave()` was corrected in §1.
+
+**Manual verification procedure once Agora's service recovers:**
+1. `POST /incidents/{id}/agora/session` — confirm real `200`, capture `agent_id`.
+2. `POST /incidents/{id}/agora/session/{session_id}/speak-summary` — record the raw HTTP status and body.
+3. If `200`: update this section's confidence label to VERIFIED (real call), noting the response shape actually returned.
+4. If `4xx`/`5xx` naming a field: correct `rest_client.py::speak()` to match, exactly as `/leave` was corrected in §1, and re-verify.
+5. Ideally, a human actually listening in the channel (§10) confirms the agent's TTS audibly said the composed text — this closes the loop `/join`'s real-speech gap (§10) never has.

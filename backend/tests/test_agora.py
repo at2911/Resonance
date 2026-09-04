@@ -302,6 +302,7 @@ class FakeAgoraRestClient:
         self.agent_id = agent_id
         self.joined = []
         self.left = []
+        self.spoken = []
 
     def join(self, name, properties):
         self.joined.append({"name": name, "properties": properties})
@@ -310,12 +311,18 @@ class FakeAgoraRestClient:
     def leave(self, agent_id):
         self.left.append(agent_id)
 
+    def speak(self, agent_id, text, priority="APPEND", interruptable=True):
+        self.spoken.append({"agent_id": agent_id, "text": text, "priority": priority, "interruptable": interruptable})
+
 
 class FailingAgoraRestClient:
     def join(self, name, properties):
         raise AgoraRestError("simulated Agora outage")
 
     def leave(self, agent_id):
+        raise AgoraRestError("simulated Agora outage")
+
+    def speak(self, agent_id, text, priority="APPEND", interruptable=True):
         raise AgoraRestError("simulated Agora outage")
 
 
@@ -429,6 +436,94 @@ def test_end_session_calls_agora_leave_and_records_timeline_event(wired_client, 
 def test_end_session_for_unknown_session_id_returns_404(wired_client, incident):
     r = wired_client.post(f"/incidents/{incident.id}/agora/session/does-not-exist/end")
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------
+# Voice summaries: POST .../speak-summary (docs/AGORA_INTEGRATION.md §11)
+# ---------------------------------------------------------------------
+
+
+class SpeakFailingAgoraRestClient(FakeAgoraRestClient):
+    def speak(self, agent_id, text, priority="APPEND", interruptable=True):
+        raise AgoraRestError("simulated Agora outage")
+
+
+def test_speak_summary_composes_from_real_state_and_returns_it(wired_client, incident, state_service):
+    state_service.add_claim(
+        incident.id,
+        text="raw",
+        normalized_claim="Payment API is returning 503 errors",
+        type=ClaimType.FACT,
+        status=ClaimStatus.CONFIRMED,
+        confidence=0.9,
+        evidence="checked dashboard",
+    )
+    created = wired_client.post(f"/incidents/{incident.id}/agora/session", json={"agent_uid": 1}).json()
+    session_id = created["session"]["id"]
+
+    r = wired_client.post(f"/incidents/{incident.id}/agora/session/{session_id}/speak-summary")
+    assert r.status_code == 200
+    body = r.json()
+    assert "Payment API is returning 503 errors" in body["spoken_text"]
+
+    incident_state = wired_client.get(f"/incidents/{incident.id}").json()
+    event_types = [e["event_type"] for e in incident_state["timeline"]]
+    assert "AGORA_SUMMARY_SPOKEN" in event_types
+    spoken_event = next(e for e in incident_state["timeline"] if e["event_type"] == "AGORA_SUMMARY_SPOKEN")
+    assert body["spoken_text"] in spoken_event["content"]
+
+
+def test_speak_summary_calls_agora_with_append_priority_not_interrupt(state_service, agora_repo, incident):
+    """APPEND is the deliberate default (session_service.speak_summary) so
+    a human mid-sentence in the call is never talked over."""
+    fake = FakeAgoraRestClient()
+    app.dependency_overrides[get_incident_state_service] = lambda: state_service
+    app.dependency_overrides[get_agora_repository] = lambda: agora_repo
+    app.dependency_overrides[get_rest_client] = lambda: fake
+    app.dependency_overrides[get_token_builder] = lambda: FakeTokenBuilder()
+    try:
+        client = TestClient(app)
+        created = client.post(f"/incidents/{incident.id}/agora/session", json={"agent_uid": 1}).json()
+        session_id = created["session"]["id"]
+
+        r = client.post(f"/incidents/{incident.id}/agora/session/{session_id}/speak-summary")
+        assert r.status_code == 200
+        assert len(fake.spoken) == 1
+        assert fake.spoken[0]["priority"] == "APPEND"
+        assert fake.spoken[0]["interruptable"] is True
+        assert fake.spoken[0]["agent_id"] == fake.agent_id
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_speak_summary_on_ended_session_returns_409_not_a_silent_noop(wired_client, incident):
+    created = wired_client.post(f"/incidents/{incident.id}/agora/session", json={"agent_uid": 1}).json()
+    session_id = created["session"]["id"]
+    wired_client.post(f"/incidents/{incident.id}/agora/session/{session_id}/end")
+
+    r = wired_client.post(f"/incidents/{incident.id}/agora/session/{session_id}/speak-summary")
+    assert r.status_code == 409
+
+
+def test_speak_summary_for_unknown_session_returns_404(wired_client, incident):
+    r = wired_client.post(f"/incidents/{incident.id}/agora/session/does-not-exist/speak-summary")
+    assert r.status_code == 404
+
+
+def test_speak_summary_maps_real_agora_error_to_502(state_service, agora_repo, incident):
+    app.dependency_overrides[get_incident_state_service] = lambda: state_service
+    app.dependency_overrides[get_agora_repository] = lambda: agora_repo
+    app.dependency_overrides[get_rest_client] = lambda: SpeakFailingAgoraRestClient()
+    app.dependency_overrides[get_token_builder] = lambda: FakeTokenBuilder()
+    try:
+        client = TestClient(app)
+        created = client.post(f"/incidents/{incident.id}/agora/session", json={"agent_uid": 1}).json()
+        session_id = created["session"]["id"]
+
+        r = client.post(f"/incidents/{incident.id}/agora/session/{session_id}/speak-summary")
+        assert r.status_code == 502
+    finally:
+        app.dependency_overrides.clear()
 
 
 # ---------------------------------------------------------------------

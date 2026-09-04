@@ -168,3 +168,11 @@ class StartSessionResponse(BaseModel):
     session: AgoraSession
     rtc_token: str
     """Token for a human participant client to join the same channel."""
+
+
+class SpeakSummaryResponse(BaseModel):
+    spoken_text: str
+    """The exact text sent to Agora's /speak endpoint — the same
+    deterministic SlackMessageComposer output a human would see in the
+    Slack approval modal, so what the agent is asked to say is always
+    visible and never invented separately from that single source."""

@@ -12,9 +12,26 @@ from app.models.enums import AgoraSessionStatus, TimelineEventType
 from app.repositories.agora_repository import AgoraRepository
 from app.services.agora.agent_config import AgentConfigError, build_default_agent_properties
 from app.services.agora.rest_client import AgoraConversationalAIClient, AgoraRestError
-from app.services.agora.schemas import AgoraSession, StartSessionRequest, StartSessionResponse, utcnow
+from app.services.agora.schemas import (
+    AgoraSession,
+    SpeakSummaryResponse,
+    StartSessionRequest,
+    StartSessionResponse,
+    utcnow,
+)
 from app.services.agora.token import TokenBuilder, TokenBuildError
 from app.services.incident_state.service import IncidentStateService
+from app.services.slack.composer import SlackMessageComposer
+
+
+class SessionNotActiveError(Exception):
+    """Raised when /speak-summary is called on a session that isn't
+    ACTIVE or has no agent_id yet — there is nothing real to call Agora
+    with in that state, so this fails clearly instead of attempting a
+    /speak call Agora would itself reject."""
+
+    def __init__(self, session_id: str, reason: str) -> None:
+        super().__init__(f"Agora session {session_id} cannot speak right now: {reason}")
 
 
 def start_session(
@@ -111,3 +128,36 @@ def end_session(
     )
 
     return session
+
+
+def speak_summary(
+    state_service: IncidentStateService,
+    agora_repo: AgoraRepository,
+    rest_client: AgoraConversationalAIClient,
+    session_id: str,
+) -> SpeakSummaryResponse:
+    """Composes the same deterministic status text a human would review
+    in the Slack approval modal (SlackMessageComposer — no LLM in the
+    loop for the exact words) and asks the live Agora agent to say it out
+    loud via the real, verified /speak call. Uses priority=APPEND so a
+    human currently mid-sentence in the call is never talked over; the
+    agent finishes its current turn, then speaks the summary."""
+    session = agora_repo.get_session(session_id)
+
+    if session.status != AgoraSessionStatus.ACTIVE:
+        raise SessionNotActiveError(session_id, f"status is {session.status.value}, not ACTIVE")
+    if not session.agent_id:
+        raise SessionNotActiveError(session_id, "no agent_id recorded for this session")
+
+    incident = state_service.get(session.incident_id)
+    text = SlackMessageComposer.compose(incident)
+
+    rest_client.speak(session.agent_id, text, priority="APPEND", interruptable=True)
+
+    state_service.add_timeline_note(
+        session.incident_id,
+        TimelineEventType.AGORA_SUMMARY_SPOKEN,
+        f"Asked the AI Incident Commander to speak a status summary: {text}",
+    )
+
+    return SpeakSummaryResponse(spoken_text=text)

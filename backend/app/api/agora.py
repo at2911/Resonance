@@ -38,12 +38,13 @@ from app.services.agora.schemas import (
     AgentJoinedPayload,
     AgentLeftPayload,
     AgoraSession,
+    SpeakSummaryResponse,
     StartSessionRequest,
     StartSessionResponse,
     StoredConversationEvent,
     TranscriptSegmentIngestRequest,
 )
-from app.services.agora.session_service import end_session, start_session
+from app.services.agora.session_service import SessionNotActiveError, end_session, speak_summary, start_session
 from app.services.agora.token import AgoraTokenBuilder, TokenBuildError, TokenBuilder
 from app.services.agora.webhook import WebhookVerificationError, parse_envelope, verify_signature
 from app.services.contradiction.llm_client import LLMCallError as ContradictionLLMCallError
@@ -165,6 +166,36 @@ def stop_session(
     if session.incident_id != incident_id:
         raise HTTPException(status_code=404, detail="Session does not belong to this incident")
     return session
+
+
+@router.post("/incidents/{incident_id}/agora/session/{session_id}/speak-summary", response_model=SpeakSummaryResponse)
+def speak_session_summary(
+    incident_id: str,
+    session_id: str,
+    state_service: IncidentStateService = Depends(get_incident_state_service),
+    agora_repo: AgoraRepository = Depends(get_agora_repository),
+    rest_client: AgoraConversationalAIClient = Depends(get_rest_client),
+):
+    """Voice summaries: asks the live agent to speak the same deterministic
+    status text a human reviews before a Slack send (SlackMessageComposer),
+    via the real (search-synthesis-verified, see docs/AGORA_INTEGRATION.md
+    §11) /speak endpoint. Unlike the Slack send, this never touches a human
+    approval gate — it's the AI reading back its own current understanding
+    on request, not an action reaching a system outside this incident."""
+    try:
+        session = agora_repo.get_session(session_id)
+    except AgoraSessionNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+    if session.incident_id != incident_id:
+        raise HTTPException(status_code=404, detail="Session does not belong to this incident")
+
+    try:
+        return speak_summary(state_service, agora_repo, rest_client, session_id)
+    except SessionNotActiveError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except AgoraRestError as e:
+        raise HTTPException(status_code=502, detail=f"Failed to speak Agora summary: {e}") from e
 
 
 # ---------------------------------------------------------------------

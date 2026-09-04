@@ -32,7 +32,7 @@ something that was only assumed to work.
   person can send it. Enforced server-side, idempotent, never double-sent.
 - ▶️ **Deterministic Demo Mode** — a scripted, judge-ready 9-step replay
   through the real backend, pausable/resumable, no microphone required.
-- 🧪 **141 backend + 37 frontend tests passing**, plus real (not mocked)
+- 🧪 **146 backend + 50 frontend tests passing**, plus real (not mocked)
   verification against the live Gemini, Slack, and Agora APIs — see below.
 
 ## Status
@@ -162,14 +162,20 @@ Implemented:
   procedure and requires a human participant.
 
 - **Frontend Dashboard** — `frontend/` (React + TypeScript + Vite). Real
-  components (`IncidentHeader`, `Timeline`, `ClaimCard`, `ConflictCard`,
-  `ActionCard`, `RiskCard`, `EvidencePanel`, `ApprovalModal`, `ClarityScore`,
-  `InformationGaps`, `AgoraControls`, `DemoControls`) talking to the actual
-  backend API — every function in `services/api.ts` was mapped from the
-  real route files, nothing invented. `RiskCard` mirrors `ActionCard`'s
-  shape (severity, status, description, confidence %, mitigation when
-  stated) and reads real `incident.risks` state. `frontend/demo.html` (a
-  single-file, dependency-free fallback) is kept alongside it untouched.
+  components (`IncidentHeader`, `Timeline`, `WhatChanged`, `ClaimCard`,
+  `ConflictCard`, `ActionCard`, `RiskCard`, `ParticipantCard`,
+  `EvidencePanel`, `ApprovalModal`, `ClarityScore`, `InformationGaps`,
+  `AgoraControls`, `DemoControls`) talking to the actual backend API —
+  every function in `services/api.ts` was mapped from the real route
+  files, nothing invented. `RiskCard` mirrors `ActionCard`'s shape
+  (severity, status, description, confidence %, mitigation when stated)
+  and reads real `incident.risks` state; `ParticipantCard` reads real
+  `incident.participants` (role, role confidence, a 🎙 badge for anyone
+  identified via a real Agora voice session), rendering `UNKNOWN` role at
+  0% confidence honestly rather than hiding it; `WhatChanged` computes a
+  recap purely from real timeline/external-action timestamps, no separate
+  state of its own. `frontend/demo.html` (a single-file, dependency-free
+  fallback) is kept alongside it untouched.
   See **Frontend** below.
 - **Provider-agnostic LLM selection** — `LLM_PROVIDER=anthropic` (default)
   or `gemini`, so development doesn't require paid Anthropic usage. See
@@ -200,9 +206,30 @@ Implemented:
   the full record, including the live `gemini-2.5-flash` → `404` that
   caught a wrong default model and the `gemini-3.6-flash` fix.
 
-Not yet implemented: spoken voice status summaries (the AI currently
-listens and reasons over voice, but doesn't yet speak a generated summary
-back). Lands in a subsequent slice per the priority order in the spec.
+- **Voice summaries** — `POST /incidents/{id}/agora/session/{id}/speak-summary`
+  asks the live Agora agent to speak the incident's current status out
+  loud. Reuses the exact same deterministic `SlackMessageComposer` text a
+  human already reviews before a Slack send — no separate wording is
+  invented for voice. The `/speak` endpoint shape is search-synthesis
+  verified (two independent sources, corroborated by the directly-fetched
+  `/interrupt` endpoint's shared vocabulary), not yet confirmed by a real
+  call — a live attempt this session was blocked by a genuine `500` from
+  Agora's own model-service infrastructure (not a bug in this code; it
+  blocked the already-verified `/join` too). See
+  `docs/AGORA_INTEGRATION.md` §11 for the exact retry procedure.
+- **Participants panel** (frontend) — the dashboard now surfaces
+  `incident.participants` (name, recognized role, role confidence, a 🎙
+  badge for anyone identified via a real Agora voice session) instead of
+  only holding that data server-side.
+- **What Changed panel** (frontend) — a recap of everything new since the
+  last successfully-sent Slack update (or since the incident was created,
+  if none has been sent yet), computed from the incident's own timeline —
+  useful for picking the incident back up after stepping away.
+
+Everything above landed and was verified the same night, without the
+maintainer present to approve each step (explicitly authorized) — see
+git log for the exact commits. Backend/frontend test counts below reflect
+this work.
 
 ## Backend
 
@@ -222,7 +249,7 @@ cd backend
 pytest -v
 ```
 
-141/141 tests pass (up from 121 — 14 for backend-driven Demo Mode, 6 for
+146/146 tests pass (up from 121 — 14 for backend-driven Demo Mode, 6 for
 the Agora default ASR/LLM/TTS construction and the real-request-shaped
 `AgentConfigError`/503 path), covering everything above plus:
 
@@ -293,10 +320,11 @@ not on `http://127.0.0.1:8000`.
 Run tests / type-check / build:
 
 ```bash
-npm run test      # 37/37 — component tests, a full propose -> approve
+npm run test      # 50/50 — component tests, a full propose -> approve
                    # -> execute -> reject flow against a stateful mock of
-                   # the API layer, Demo Mode controls, the Risks panel,
-                   # and Agora session start/error/end
+                   # the API layer, Demo Mode controls, the Risks and
+                   # Participants panels, What Changed, and Agora session
+                   # start/speak-summary/error/end
 npm run build      # tsc -b && vite build
 npm run lint
 ```

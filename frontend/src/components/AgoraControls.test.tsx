@@ -13,6 +13,7 @@ vi.mock('../services/api', () => ({
   },
   startAgoraSession: vi.fn(),
   endAgoraSession: vi.fn(),
+  speakAgoraSummary: vi.fn(),
 }))
 
 function session(): StartSessionResponse {
@@ -88,5 +89,40 @@ describe('AgoraControls', () => {
       expect(screen.getByTestId('btn-agora-start')).toBeInTheDocument()
     })
     expect(api.endAgoraSession).toHaveBeenCalledWith('inc-1', 'sess-1')
+  })
+
+  it('Speak Summary calls the backend and shows the real spoken text it returned', async () => {
+    const api = await import('../services/api')
+    vi.mocked(api.startAgoraSession).mockResolvedValue(session())
+    vi.mocked(api.speakAgoraSummary).mockResolvedValue({ spoken_text: 'Incident: Payment API Outage. No facts have been confirmed yet.' })
+
+    render(<AgoraControls incidentId="inc-1" />)
+    fireEvent.click(screen.getByTestId('btn-agora-start'))
+    await screen.findByTestId('btn-agora-speak-summary')
+
+    fireEvent.click(screen.getByTestId('btn-agora-speak-summary'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('agora-spoken-text')).toHaveTextContent('No facts have been confirmed yet')
+    })
+    expect(api.speakAgoraSummary).toHaveBeenCalledWith('inc-1', 'sess-1')
+  })
+
+  it('surfaces a real backend error from Speak Summary (e.g. session not active) instead of pretending it worked', async () => {
+    const api = await import('../services/api')
+    const { ApiError } = api
+    vi.mocked(api.startAgoraSession).mockResolvedValue(session())
+    vi.mocked(api.speakAgoraSummary).mockRejectedValue(new ApiError(409, 'Agora session sess-1 cannot speak right now: status is ENDED, not ACTIVE'))
+
+    render(<AgoraControls incidentId="inc-1" />)
+    fireEvent.click(screen.getByTestId('btn-agora-start'))
+    await screen.findByTestId('btn-agora-speak-summary')
+
+    fireEvent.click(screen.getByTestId('btn-agora-speak-summary'))
+
+    await waitFor(() => {
+      expect(screen.getByText(/cannot speak right now/)).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('agora-spoken-text')).not.toBeInTheDocument()
   })
 })

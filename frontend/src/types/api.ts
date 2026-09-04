@@ -68,6 +68,7 @@ export type TimelineEventType =
   | 'AGORA_AGENT_JOINED'
   | 'AGORA_AGENT_LEFT'
   | 'AGORA_AGENT_ERROR'
+  | 'AGORA_SUMMARY_SPOKEN'
 
 export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
 
@@ -267,6 +268,11 @@ export interface AddInformationGapRequest {
   related_claims?: string[]
 }
 
+export interface CorrectParticipantRoleRequest {
+  role: ParticipantRole
+  corrected_by?: string | null
+}
+
 export interface AddUtteranceRequest {
   speaker_id?: string | null
   speaker_name: string
@@ -308,4 +314,8 @@ export interface AgoraSession {
 export interface StartSessionResponse {
   session: AgoraSession
   rtc_token: string
+}
+
+export interface SpeakSummaryResponse {
+  spoken_text: string
 }

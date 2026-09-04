@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ExternalAction, Incident } from '../types/api'
+import type { ExternalAction, Incident, ParticipantRole } from '../types/api'
 import { Dashboard } from './Dashboard'
 
 // A stateful fake of the backend: exercises the same PENDING -> APPROVED ->
@@ -21,7 +21,16 @@ function baseIncident(): Incident {
     clarity_score: 80,
     created_at: '2026-08-30T10:00:00Z',
     updated_at: '2026-08-30T10:00:00Z',
-    participants: {},
+    participants: {
+      p1: {
+        id: 'p1',
+        name: 'Alice',
+        role: 'INCIDENT_COMMANDER',
+        role_confidence: 0.9,
+        joined_at: '2026-08-30T09:58:00Z',
+        agora_uid: null,
+      },
+    },
     claims: {
       c1: {
         id: 'c1',
@@ -123,6 +132,11 @@ vi.mock('../services/api', () => ({
     return externalAction
   }),
   postUtterance: vi.fn(),
+  correctParticipantRole: vi.fn(async (_id: string, participantId: string, req: { role: ParticipantRole; corrected_by: string }) => {
+    const corrected = { ...incident.participants[participantId], role: req.role, role_confidence: 1.0 }
+    incident = { ...incident, participants: { ...incident.participants, [participantId]: corrected } }
+    return corrected
+  }),
 }))
 
 beforeEach(() => {
@@ -140,6 +154,59 @@ describe('Dashboard — end-to-end approval gate through the real UI', () => {
   it('renders risks from backend state in their own panel', async () => {
     render(<Dashboard incidentId="inc1" />)
     expect(await screen.findByText(/Rollback may cause data inconsistency/)).toBeInTheDocument()
+  })
+
+  it('renders participants from backend state in their own panel', async () => {
+    render(<Dashboard incidentId="inc1" />)
+    expect(await screen.findByText('Alice')).toBeInTheDocument()
+    expect(screen.getByTestId('participant-role-tag')).toHaveTextContent('INCIDENT COMMANDER')
+  })
+
+  it('correcting a role calls the backend and reflects the real corrected state, not a locally-guessed one', async () => {
+    const api = await import('../services/api')
+    render(<Dashboard incidentId="inc1" />)
+    await screen.findByText('Alice')
+
+    fireEvent.change(screen.getByTestId('participant-role-select'), { target: { value: 'SRE' } })
+    fireEvent.click(screen.getByTestId('participant-correct-role'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('participant-role-tag')).toHaveTextContent('SRE')
+    })
+    expect(api.correctParticipantRole).toHaveBeenCalledWith('inc1', 'p1', { role: 'SRE', corrected_by: 'ic-dashboard' })
+    // Confidence jumping to 100% (not just the label changing) proves the
+    // panel re-rendered from refreshed backend state, not a local guess.
+    expect(screen.getByTestId('participant-role-confidence')).toHaveTextContent('100% sure')
+  })
+
+  it('What Changed labels the recap as "since created" when no Slack update has ever been sent', async () => {
+    render(<Dashboard incidentId="inc1" />)
+    await screen.findByText(/Payment API is returning 503 errors/)
+    expect(screen.getByText(/no Slack update sent yet/)).toBeInTheDocument()
+  })
+
+  it('What Changed switches to "since last update" once a Slack update has actually succeeded', async () => {
+    incident = {
+      ...incident,
+      external_actions: {
+        ea1: {
+          id: 'ea1',
+          action_type: 'SLACK_MESSAGE',
+          payload: { channel: '#payments-incident', text: 'x' },
+          idempotency_key: 'k1',
+          proposed_at: '2026-08-30T10:04:00Z',
+          approval_status: 'APPROVED',
+          approved_by: 'ic-dashboard',
+          approved_at: '2026-08-30T10:04:30Z',
+          executed_at: '2026-08-30T10:05:00Z',
+          execution_status: 'SUCCEEDED',
+          execution_result: 'Posted to Slack channel #payments-incident (ts=1.1)',
+        },
+      },
+    }
+    render(<Dashboard incidentId="inc1" />)
+    await screen.findByText(/Payment API is returning 503 errors/)
+    expect(screen.getByText('since the last Slack update was sent')).toBeInTheDocument()
   })
 
   it('never shows a proposal until "Propose Slack Update" is clicked', async () => {

@@ -14,6 +14,7 @@ import type {
   Claim,
   ClarityScoreBreakdown,
   Conflict,
+  CorrectParticipantRoleRequest,
   CreateIncidentRequest,
   DecideExternalActionRequest,
   DemoStatus,
@@ -22,6 +23,8 @@ import type {
   FinalSummary,
   Incident,
   InformationGap,
+  Participant,
+  SpeakSummaryResponse,
   StartSessionResponse,
 } from '../types/api'
 
@@ -76,6 +79,9 @@ export const updateActionStatus = (id: string, actionId: string, status: string,
 export const addConflict = (id: string, req: AddConflictRequest) =>
   request<Conflict>('POST', `/incidents/${id}/conflicts`, req)
 
+export const correctParticipantRole = (id: string, participantId: string, req: CorrectParticipantRoleRequest) =>
+  request<Participant>('POST', `/incidents/${id}/participants/${participantId}/correct-role`, req)
+
 export const resolveConflict = (id: string, conflictId: string, resolution_evidence: string) =>
   request<Conflict>('POST', `/incidents/${id}/conflicts/${conflictId}/resolve`, { resolution_evidence })
 
@@ -112,3 +118,6 @@ export const startAgoraSession = (incidentId: string) =>
 
 export const endAgoraSession = (incidentId: string, sessionId: string) =>
   request<AgoraSession>('POST', `/incidents/${incidentId}/agora/session/${sessionId}/end`)
+
+export const speakAgoraSummary = (incidentId: string, sessionId: string) =>
+  request<SpeakSummaryResponse>('POST', `/incidents/${incidentId}/agora/session/${sessionId}/speak-summary`)

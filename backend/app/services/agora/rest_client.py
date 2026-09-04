@@ -15,6 +15,15 @@ being targeted had already ended on its own (no participant ever joined
 that test session) by the time this was retried, so a full
 successful-leave-on-an-active-session has not been directly observed.
 Isolated here so a further correction, if needed, is a one-file change.
+
+/speak: VERIFIED (search synthesis only, not direct fetch — the docs page
+itself redirects automated fetches to an index, the same JS-rendering
+limitation /join originally hit). Two independent search-result summaries
+agree on `POST {base}/agents/{agent_id}/speak` with body
+`{"text": str, "priority": "INTERRUPT"|"APPEND"|"IGNORE", "interruptable": bool}`,
+consistent with the separately-confirmed `/interrupt` endpoint's own
+interrupt/append/ignore vocabulary. See docs/AGORA_INTEGRATION.md §11 for
+the full record, including the result of the first real call against it.
 """
 
 from __future__ import annotations
@@ -31,6 +40,7 @@ class AgoraRestError(Exception):
 class AgoraConversationalAIClient(Protocol):
     def join(self, name: str, properties: dict) -> dict: ...
     def leave(self, agent_id: str) -> None: ...
+    def speak(self, agent_id: str, text: str, priority: str = "APPEND", interruptable: bool = True) -> None: ...
 
 
 class HttpxAgoraConversationalAIClient:
@@ -72,4 +82,20 @@ class HttpxAgoraConversationalAIClient:
         if response.status_code >= 400:
             raise AgoraRestError(
                 f"Agora /leave returned {response.status_code}: {response.text[:500]}"
+            )
+
+    def speak(self, agent_id: str, text: str, priority: str = "APPEND", interruptable: bool = True) -> None:
+        try:
+            response = httpx.post(
+                f"{self._base_url}/agents/{agent_id}/speak",
+                json={"text": text, "priority": priority, "interruptable": interruptable},
+                auth=self._auth,
+                timeout=15.0,
+            )
+        except httpx.HTTPError as e:
+            raise AgoraRestError(f"Agora /speak call failed: {e}") from e
+
+        if response.status_code >= 400:
+            raise AgoraRestError(
+                f"Agora /speak returned {response.status_code}: {response.text[:500]}"
             )

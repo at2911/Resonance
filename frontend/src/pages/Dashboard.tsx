@@ -7,11 +7,20 @@ import { ClarityScore } from '../components/ClarityScore'
 import { ConflictCard } from '../components/ConflictCard'
 import { IncidentHeader } from '../components/IncidentHeader'
 import { InformationGaps } from '../components/InformationGaps'
+import { ParticipantCard } from '../components/ParticipantCard'
 import { RiskCard } from '../components/RiskCard'
 import { Timeline } from '../components/Timeline'
+import { WhatChanged } from '../components/WhatChanged'
 import { useIncident } from '../hooks/useIncident'
-import { ApiError, decideExternalAction, executeExternalAction, postUtterance, proposeSlackUpdate } from '../services/api'
-import type { ExternalAction } from '../types/api'
+import {
+  ApiError,
+  correctParticipantRole,
+  decideExternalAction,
+  executeExternalAction,
+  postUtterance,
+  proposeSlackUpdate,
+} from '../services/api'
+import type { ExternalAction, ParticipantRole } from '../types/api'
 
 export function Dashboard({ incidentId }: { incidentId: string }) {
   const { incident, clarity, error, refresh } = useIncident(incidentId)
@@ -28,6 +37,10 @@ export function Dashboard({ incidentId }: { incidentId: string }) {
   const conflicts = useMemo(() => (incident ? Object.values(incident.conflicts) : []), [incident])
   const actions = useMemo(() => (incident ? Object.values(incident.actions) : []), [incident])
   const risks = useMemo(() => (incident ? Object.values(incident.risks) : []), [incident])
+  const participants = useMemo(
+    () => (incident ? Object.values(incident.participants).sort((a, b) => a.joined_at.localeCompare(b.joined_at)) : []),
+    [incident],
+  )
   const pendingExternalActions = useMemo(
     () =>
       incident
@@ -38,6 +51,15 @@ export function Dashboard({ incidentId }: { incidentId: string }) {
     [incident],
   )
   const openApproval: ExternalAction | undefined = incident?.external_actions[openApprovalId ?? '']
+
+  const lastSentSlackUpdate = useMemo(() => {
+    if (!incident) return undefined
+    return Object.values(incident.external_actions)
+      .filter((ea) => ea.action_type === 'SLACK_MESSAGE' && ea.execution_status === 'SUCCEEDED' && ea.executed_at)
+      .sort((a, b) => (b.executed_at ?? '').localeCompare(a.executed_at ?? ''))[0]
+  }, [incident])
+  const sinceIso = lastSentSlackUpdate?.executed_at ?? incident?.created_at ?? ''
+  const sinceLabel = lastSentSlackUpdate ? `since the last Slack update was sent` : 'since this incident was created — no Slack update sent yet'
 
   function speakerName_(id: string | null): string | undefined {
     if (!id || !incident) return undefined
@@ -99,6 +121,19 @@ export function Dashboard({ incidentId }: { incidentId: string }) {
     }
   }
 
+  async function handleCorrectRole(participantId: string, role: ParticipantRole) {
+    setBusy(true)
+    setBanner(null)
+    try {
+      await correctParticipantRole(incidentId, participantId, { role, corrected_by: 'ic-dashboard' })
+      await refresh()
+    } catch (e) {
+      setBanner(e instanceof ApiError ? e.message : 'Role correction failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function handleExecute(id: string) {
     setBusy(true)
     try {
@@ -135,10 +170,23 @@ export function Dashboard({ incidentId }: { incidentId: string }) {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <ClarityScore clarity={clarity} />
+          <div className="panel">
+            <h2>Participants</h2>
+            <div className="body">
+              {participants.length === 0 ? (
+                <div className="empty">No participants yet.</div>
+              ) : (
+                participants.map((p) => (
+                  <ParticipantCard key={p.id} participant={p} onCorrectRole={handleCorrectRole} busy={busy} />
+                ))
+              )}
+            </div>
+          </div>
           <InformationGaps gaps={Object.values(incident.information_gaps)} />
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <WhatChanged events={incident.timeline} sinceIso={sinceIso} sinceLabel={sinceLabel} />
           <Timeline events={incident.timeline} />
 
           <AgoraControls incidentId={incidentId} />

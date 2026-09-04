@@ -193,6 +193,42 @@ class IncidentStateService:
                 self._repo.save(incident)
             return participant
 
+    def correct_participant_role(
+        self,
+        incident_id: str,
+        participant_id: str,
+        role: ParticipantRole,
+        corrected_by: Optional[str] = None,
+    ) -> Participant:
+        """A human explicitly setting a participant's role — unlike
+        update_role_if_more_confident (the extraction pipeline's own
+        confidence-gated guess), this always applies, regardless of the
+        participant's current role_confidence, and always sets confidence
+        to 1.0. A human correction is definitionally more authoritative
+        than any AI inference; it is also what future auto-updates from
+        the extraction pipeline are compared against (that method's own
+        docstring: "a human correction is stored at confidence 1.0, so
+        this can never overwrite one").
+        """
+        with self._lock:
+            incident = self._repo.get(incident_id)
+            participant = self._require(incident.participants, participant_id, "participant")
+            previous_role = participant.role
+            participant.role = role
+            participant.role_confidence = 1.0
+            self._emit(
+                incident,
+                TimelineEventType.PARTICIPANT_ROLE_CORRECTED,
+                content=(
+                    f"{participant.name}'s role corrected from {previous_role.value} to {role.value}"
+                    + (f" by {corrected_by}" if corrected_by else "")
+                ),
+                speaker=participant.id,
+            )
+            self._touch(incident)
+            self._repo.save(incident)
+            return participant
+
     def set_participant_agora_uid(
         self, incident_id: str, participant_id: str, agora_uid: str
     ) -> Participant:
