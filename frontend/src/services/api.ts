@@ -116,6 +116,12 @@ export const getDemoStatus = () => request<DemoStatus>('GET', '/demo/status')
 export const startAgoraSession = (incidentId: string) =>
   request<StartSessionResponse>('POST', `/incidents/${incidentId}/agora/session`, { agent_uid: 0 })
 
+/** Lets a teammate's browser discover a session someone else already
+ * started for this incident (the shareable-URL "join the same team
+ * call" flow) — null when nothing is currently active, not an error. */
+export const getCurrentAgoraSession = (incidentId: string) =>
+  request<StartSessionResponse | null>('GET', `/incidents/${incidentId}/agora/session`)
+
 export const endAgoraSession = (incidentId: string, sessionId: string) =>
   request<AgoraSession>('POST', `/incidents/${incidentId}/agora/session/${sessionId}/end`)
 

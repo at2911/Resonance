@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { ApiError, endAgoraSession, speakAgoraSummary, startAgoraSession } from '../services/api'
+import { useEffect, useRef, useState } from 'react'
+import { ApiError, endAgoraSession, getCurrentAgoraSession, speakAgoraSummary, startAgoraSession } from '../services/api'
 import type { StartSessionResponse } from '../types/api'
 
 // Loaded globally by index.html (AgoraRTC_N-4.24.8.js) — not an npm
@@ -26,6 +26,27 @@ export function AgoraControls({ incidentId }: { incidentId: string }) {
 
   const clientRef = useRef<any>(null)
   const trackRef = useRef<any>(null)
+
+  // A teammate opening this incident's shared URL fresh has no idea a
+  // voice session already exists — their own AgoraControls state starts
+  // empty regardless of what someone else already started. Check once on
+  // load so they see "Join Call" directly instead of "Start" (which
+  // would spin up a redundant second agent for the same incident).
+  useEffect(() => {
+    let cancelled = false
+    getCurrentAgoraSession(incidentId)
+      .then((existing) => {
+        if (!cancelled && existing) setSession(existing)
+      })
+      .catch(() => {
+        // no session yet, or a transient error — either way, the normal
+        // "Start" button is a safe fallback, nothing to surface here
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-check when the incident itself changes
+  }, [incidentId])
 
   async function handleStart() {
     setBusy(true)

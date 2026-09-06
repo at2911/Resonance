@@ -57,6 +57,20 @@ class AgoraRepository:
             session_id = self._sessions_by_agent_id.get(agent_id)
             return self._sessions[session_id].incident_id if session_id else None
 
+    def find_active_session_for_incident(self, incident_id: str) -> Optional[AgoraSession]:
+        """Lets a second person's browser discover a session someone else
+        already started for this incident, instead of only ever knowing
+        about a session it started itself — the forward lookup the
+        shareable-URL "join the same team call" flow needs. Returns the
+        most recently created ACTIVE session, if any."""
+        with self._lock:
+            candidates = [
+                s for s in self._sessions.values() if s.incident_id == incident_id and s.status.value == "ACTIVE"
+            ]
+            if not candidates:
+                return None
+            return max(candidates, key=lambda s: s.created_at)
+
     # -- raw conversation events (dedup + provenance) -------------------
 
     def has_event(self, incident_id: str, event_id: str) -> bool:

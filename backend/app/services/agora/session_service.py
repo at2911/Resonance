@@ -107,6 +107,28 @@ def start_session(
     return StartSessionResponse(session=session, rtc_token=human_token, app_id=resolved_settings.agora_app_id)
 
 
+def get_active_session(
+    agora_repo: AgoraRepository,
+    token_builder: TokenBuilder,
+    incident_id: str,
+    settings: Settings | None = None,
+) -> StartSessionResponse | None:
+    """Lets a teammate's browser, opening a shared incident URL fresh,
+    discover that someone else already started a voice session for this
+    incident and get what it needs to join it directly - rather than only
+    ever offering "Start" (which would spin up a second, redundant agent).
+    Mints a fresh uid=0 token for the existing channel; that uid is the
+    deliberate wildcard this project's real live testing already confirmed
+    works for any joiner, so no per-joiner token bookkeeping is needed.
+    Returns None if nothing is currently active for this incident."""
+    session = agora_repo.find_active_session_for_incident(incident_id)
+    if session is None:
+        return None
+    resolved_settings = settings or get_settings()
+    token = token_builder.build_rtc_token(session.channel, 0)
+    return StartSessionResponse(session=session, rtc_token=token, app_id=resolved_settings.agora_app_id)
+
+
 def end_session(
     state_service: IncidentStateService,
     agora_repo: AgoraRepository,

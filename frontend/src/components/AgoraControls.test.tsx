@@ -14,6 +14,7 @@ vi.mock('../services/api', () => ({
   startAgoraSession: vi.fn(),
   endAgoraSession: vi.fn(),
   speakAgoraSummary: vi.fn(),
+  getCurrentAgoraSession: vi.fn(),
 }))
 
 function session(): StartSessionResponse {
@@ -54,16 +55,42 @@ function installFakeAgoraRTC() {
   return { client, track }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks()
   delete (globalThis as any).AgoraRTC
+  const api = await import('../services/api')
+  vi.mocked(api.getCurrentAgoraSession).mockResolvedValue(null)
 })
 
 describe('AgoraControls', () => {
-  it('shows the Start button and no session details before a session exists', () => {
+  it('shows the Start button and no session details before a session exists', async () => {
     render(<AgoraControls incidentId="inc-1" />)
     expect(screen.getByTestId('btn-agora-start')).toBeInTheDocument()
     expect(screen.queryByTestId('agora-session-status')).not.toBeInTheDocument()
+  })
+
+  it('a teammate opening the shared incident URL discovers an already-active session and sees Join Call directly, not Start', async () => {
+    const api = await import('../services/api')
+    vi.mocked(api.getCurrentAgoraSession).mockResolvedValue(session())
+
+    render(<AgoraControls incidentId="inc-1" />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('btn-agora-join-call')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('agora-channel')).toHaveTextContent('incident-abc123')
+    expect(screen.queryByTestId('btn-agora-start')).not.toBeInTheDocument()
+    expect(api.startAgoraSession).not.toHaveBeenCalled()
+  })
+
+  it('with no active session for this incident, still shows Start (the normal, no-session state)', async () => {
+    const api = await import('../services/api')
+    vi.mocked(api.getCurrentAgoraSession).mockResolvedValue(null)
+
+    render(<AgoraControls incidentId="inc-1" />)
+
+    await waitFor(() => expect(api.getCurrentAgoraSession).toHaveBeenCalledWith('inc-1'))
+    expect(screen.getByTestId('btn-agora-start')).toBeInTheDocument()
   })
 
   it('starting a session shows the real channel and status, and offers Join Call', async () => {

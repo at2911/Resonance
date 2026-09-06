@@ -510,6 +510,48 @@ def test_speak_summary_for_unknown_session_returns_404(wired_client, incident):
     assert r.status_code == 404
 
 
+# ---------------------------------------------------------------------
+# GET .../session — a teammate discovering an already-active session
+# (the shareable-URL "team call, not independent ones" fix)
+# ---------------------------------------------------------------------
+
+
+def test_get_current_session_returns_null_when_nothing_is_active(wired_client, incident):
+    r = wired_client.get(f"/incidents/{incident.id}/agora/session")
+    assert r.status_code == 200
+    assert r.json() is None
+
+
+def test_get_current_session_lets_a_second_browser_discover_and_join_the_same_session(wired_client, incident):
+    created = wired_client.post(f"/incidents/{incident.id}/agora/session", json={"agent_uid": 1}).json()
+
+    r = wired_client.get(f"/incidents/{incident.id}/agora/session")
+    assert r.status_code == 200
+    body = r.json()
+    assert body is not None
+    assert body["session"]["channel"] == created["session"]["channel"]
+    assert body["session"]["agent_id"] == created["session"]["agent_id"]
+    assert body["app_id"] == created["app_id"]
+    # A real, usable token for the same channel - not just an echo of the
+    # first caller's token (each mint is independent, same uid=0 wildcard).
+    assert body["rtc_token"].startswith("fake-token-")
+
+
+def test_get_current_session_returns_null_after_the_session_has_ended(wired_client, incident):
+    created = wired_client.post(f"/incidents/{incident.id}/agora/session", json={"agent_uid": 1}).json()
+    wired_client.post(f"/incidents/{incident.id}/agora/session/{created['session']['id']}/end")
+
+    r = wired_client.get(f"/incidents/{incident.id}/agora/session")
+    assert r.status_code == 200
+    assert r.json() is None
+
+
+def test_get_current_session_for_unknown_incident_returns_null_not_an_error(wired_client):
+    r = wired_client.get("/incidents/does-not-exist/agora/session")
+    assert r.status_code == 200
+    assert r.json() is None
+
+
 def test_speak_summary_maps_real_agora_error_to_502(state_service, agora_repo, incident):
     app.dependency_overrides[get_incident_state_service] = lambda: state_service
     app.dependency_overrides[get_agora_repository] = lambda: agora_repo

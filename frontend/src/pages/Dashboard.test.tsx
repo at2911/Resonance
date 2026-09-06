@@ -132,6 +132,7 @@ vi.mock('../services/api', () => ({
     return externalAction
   }),
   postUtterance: vi.fn(),
+  getCurrentAgoraSession: vi.fn(async () => null),
   correctParticipantRole: vi.fn(async (_id: string, participantId: string, req: { role: ParticipantRole; corrected_by: string }) => {
     const corrected = { ...incident.participants[participantId], role: req.role, role_confidence: 1.0 }
     incident = { ...incident, participants: { ...incident.participants, [participantId]: corrected } }

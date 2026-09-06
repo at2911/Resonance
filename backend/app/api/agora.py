@@ -44,7 +44,13 @@ from app.services.agora.schemas import (
     StoredConversationEvent,
     TranscriptSegmentIngestRequest,
 )
-from app.services.agora.session_service import SessionNotActiveError, end_session, speak_summary, start_session
+from app.services.agora.session_service import (
+    SessionNotActiveError,
+    end_session,
+    get_active_session,
+    speak_summary,
+    start_session,
+)
 from app.services.agora.token import AgoraTokenBuilder, TokenBuildError, TokenBuilder
 from app.services.agora.webhook import WebhookVerificationError, parse_envelope, verify_signature
 from app.services.contradiction.llm_client import LLMCallError as ContradictionLLMCallError
@@ -146,6 +152,23 @@ def create_session(
         raise HTTPException(status_code=503, detail=f"Agora agent unavailable: {e}") from e
     except (AgoraRestError, TokenBuildError) as e:
         raise HTTPException(status_code=502, detail=f"Failed to start Agora session: {e}") from e
+
+
+@router.get("/incidents/{incident_id}/agora/session", response_model=Optional[StartSessionResponse])
+def get_current_session(
+    incident_id: str,
+    agora_repo: AgoraRepository = Depends(get_agora_repository),
+    token_builder: TokenBuilder = Depends(get_token_builder),
+):
+    """Lets a teammate opening a shared incident link discover a session
+    someone else already started and get what's needed to join it
+    directly — the counterpart to POST .../session for the "team call,
+    not independent ones" flow. Returns null (200) if nothing is active,
+    not a 404 — "no session yet" is a normal, expected state to poll for."""
+    try:
+        return get_active_session(agora_repo, token_builder, incident_id)
+    except TokenBuildError as e:
+        raise HTTPException(status_code=502, detail=f"Failed to prepare a join token: {e}") from e
 
 
 @router.post("/incidents/{incident_id}/agora/session/{session_id}/end", response_model=AgoraSession)
