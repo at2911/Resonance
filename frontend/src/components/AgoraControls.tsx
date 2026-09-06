@@ -6,6 +6,31 @@ import type { StartSessionResponse } from '../types/api'
 // import, so it's declared ambient here rather than typed properly.
 declare const AgoraRTC: any
 
+// There's no login system in this app (a deliberate MVP scope choice,
+// not an oversight) — so "only the person who started it can end it"
+// can only be a same-browser convention, not real server-enforced
+// access control: whoever's browser called Start remembers that
+// session's id in localStorage, and only that browser shows End
+// Session for it. A teammate who discovers an existing session (the
+// getCurrentAgoraSession check below) never gets this marked, so they
+// only ever see Leave Call — which just disconnects themselves.
+function markOwnedSession(sessionId: string): void {
+  try {
+    localStorage.setItem(`agora-owner:${sessionId}`, '1')
+  } catch {
+    // localStorage can throw in some contexts (private browsing, etc.)
+    // — worst case, End Session just doesn't show for this browser either
+  }
+}
+
+function ownsSession(sessionId: string): boolean {
+  try {
+    return localStorage.getItem(`agora-owner:${sessionId}`) === '1'
+  } catch {
+    return false
+  }
+}
+
 /** Starts/stops a real Agora Conversational AI session for this incident,
  * AND lets a real human join that same voice channel directly from this
  * panel — using the real Agora Web SDK (rtc mode, the correct mode for a
@@ -53,6 +78,7 @@ export function AgoraControls({ incidentId }: { incidentId: string }) {
     setError(null)
     try {
       const result = await startAgoraSession(incidentId)
+      markOwnedSession(result.session.id)
       setSession(result)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not reach the backend')
@@ -212,10 +238,17 @@ export function AgoraControls({ incidentId }: { incidentId: string }) {
               <button className="btn secondary small" disabled={busy} onClick={handleSpeak} data-testid="btn-agora-speak-summary">
                 🔊 Speak Summary
               </button>
-              <button className="btn reject small" disabled={busy} onClick={handleEnd} data-testid="btn-agora-end">
-                End Session
-              </button>
+              {ownsSession(session.session.id) && (
+                <button className="btn reject small" disabled={busy} onClick={handleEnd} data-testid="btn-agora-end">
+                  End Session
+                </button>
+              )}
             </div>
+            {!ownsSession(session.session.id) && (
+              <div style={{ color: 'var(--dim)', fontSize: 11, marginTop: 6 }}>
+                Only the person who started this session can end it for everyone — you can still Leave Call anytime.
+              </div>
+            )}
 
             {!joined && (
               <div style={{ color: 'var(--dim)', fontSize: 11, marginTop: 6 }}>

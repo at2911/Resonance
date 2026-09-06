@@ -58,6 +58,7 @@ function installFakeAgoraRTC() {
 beforeEach(async () => {
   vi.clearAllMocks()
   delete (globalThis as any).AgoraRTC
+  localStorage.clear()
   const api = await import('../services/api')
   vi.mocked(api.getCurrentAgoraSession).mockResolvedValue(null)
 })
@@ -81,6 +82,34 @@ describe('AgoraControls', () => {
     expect(screen.getByTestId('agora-channel')).toHaveTextContent('incident-abc123')
     expect(screen.queryByTestId('btn-agora-start')).not.toBeInTheDocument()
     expect(api.startAgoraSession).not.toHaveBeenCalled()
+
+    // Ownership: they discovered this session, they didn't start it — no
+    // login system exists to check this against a server, so the real,
+    // honest behavior is a same-browser convention: only the browser that
+    // actually called Start gets to end it for everyone.
+    expect(screen.queryByTestId('btn-agora-end')).not.toBeInTheDocument()
+    expect(screen.getByText(/Only the person who started this session can end it/)).toBeInTheDocument()
+  })
+
+  it('the browser that started the session sees End Session; a fresh browser (no ownership marker) does not', async () => {
+    const api = await import('../services/api')
+    vi.mocked(api.startAgoraSession).mockResolvedValue(session())
+
+    const { unmount } = render(<AgoraControls incidentId="inc-1" />)
+    fireEvent.click(screen.getByTestId('btn-agora-start'))
+    await screen.findByTestId('btn-agora-end')
+    unmount()
+
+    // Simulate a second, different browser: same session already active
+    // (discovered via getCurrentAgoraSession), but this "browser" never
+    // called Start, so it never got the localStorage ownership marker -
+    // clearing it models that directly rather than relying on unmount.
+    localStorage.clear()
+    vi.mocked(api.getCurrentAgoraSession).mockResolvedValue(session())
+    render(<AgoraControls incidentId="inc-1" />)
+
+    await screen.findByTestId('btn-agora-join-call')
+    expect(screen.queryByTestId('btn-agora-end')).not.toBeInTheDocument()
   })
 
   it('with no active session for this incident, still shows Start (the normal, no-session state)', async () => {
