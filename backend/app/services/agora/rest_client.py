@@ -23,6 +23,19 @@ with body `{"text": str, "priority": "INTERRUPT"|"APPEND"|"IGNORE",
 JS-rendering limitation /join originally hit); the guessed shape turned
 out correct on the first real call, unlike /leave, which needed a real
 correction. See docs/AGORA_INTEGRATION.md §11a for the full record.
+
+/leave 404 handling: a real live-demo session surfaced a second real
+gap beyond the URL-shape bug above. Agora's own agents time out and
+end themselves if no participant ever joins the RTC channel — a real,
+observed occurrence, not a hypothetical — so by the time a human clicks
+"End Session" some minutes later, `/leave` legitimately 404s with
+`{"reason": "TaskNotFound"}` because the agent is already gone. Treating
+that as a hard failure left the session stuck ACTIVE forever in our own
+state (the exception aborted end_session() before it could mark the
+session ENDED), permanently blocking the End Session button for that
+incident. A 404 here is the desired end state already having been
+reached by another means, not an error — leave() now treats it as
+success. Any other status code is still a real failure and still raises.
 """
 
 from __future__ import annotations
@@ -77,6 +90,12 @@ class HttpxAgoraConversationalAIClient:
             )
         except httpx.HTTPError as e:
             raise AgoraRestError(f"Agora /leave call failed: {e}") from e
+
+        if response.status_code == 404:
+            # Already gone — Agora's agents time out and end themselves if
+            # nobody ever joins the channel. That's the state we wanted
+            # anyway, so this is success, not a failure to surface.
+            return
 
         if response.status_code >= 400:
             raise AgoraRestError(
