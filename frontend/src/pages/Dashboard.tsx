@@ -158,17 +158,8 @@ export function Dashboard({ incidentId }: { incidentId: string }) {
         <div style={{ background: '#3a1c1c', color: '#ff8080', padding: '8px 20px', fontSize: 12.5 }}>{banner}</div>
       )}
 
-      <main
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '260px 1.1fr 1fr',
-          gap: 16,
-          padding: '16px 20px',
-          maxWidth: 1600,
-          margin: '0 auto',
-        }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <main className="dashboard-grid">
+        <div className="dashboard-col">
           <ClarityScore clarity={clarity} />
           <div className="panel">
             <h2>Participants</h2>
@@ -185,7 +176,7 @@ export function Dashboard({ incidentId }: { incidentId: string }) {
           <InformationGaps gaps={Object.values(incident.information_gaps)} />
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="dashboard-col">
           <WhatChanged events={incident.timeline} sinceIso={sinceIso} sinceLabel={sinceLabel} />
           <Timeline events={incident.timeline} />
 
@@ -219,7 +210,7 @@ export function Dashboard({ incidentId }: { incidentId: string }) {
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="dashboard-col">
           <div className="panel">
             <h2>Facts / Hypotheses / Decisions</h2>
             <div className="body">
@@ -279,6 +270,7 @@ export function Dashboard({ incidentId }: { incidentId: string }) {
           padding: '10px 20px',
           display: 'flex',
           alignItems: 'center',
+          flexWrap: 'wrap',
           gap: 12,
         }}
       >

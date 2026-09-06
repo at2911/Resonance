@@ -45,34 +45,60 @@ function CreateIncidentScreen({
   }
 
   return (
-    <div style={{ maxWidth: 420, margin: '80px auto', padding: 20 }}>
-      <h1 style={{ fontSize: 18 }}>🛰 Resonance — Incident Commander</h1>
-      <p style={{ color: 'var(--dim)', fontSize: 13 }}>Start a new incident to open the live dashboard.</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Incident title"
-          style={{ background: 'var(--panel2)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 6, padding: '8px 10px' }}
-        />
-        <select
-          value={severity}
-          onChange={(e) => setSeverity(e.target.value as IncidentSeverity)}
-          style={{ background: 'var(--panel2)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 6, padding: '8px 10px' }}
-        >
-          {SEVERITIES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <button className="btn" disabled={busy || !title.trim()} onClick={handleCreate} data-testid="btn-create-incident">
-          {busy ? 'Creating…' : 'Create Incident'}
-        </button>
-        <button className="btn secondary" disabled={busy} onClick={handleRunDemo} data-testid="btn-run-demo">
-          ▶ Run Backend Demo
-        </button>
-        {error && <div style={{ color: 'var(--critical)', fontSize: 12.5 }}>{error}</div>}
+    <div className="start-screen">
+      <div className="start-screen-inner">
+        <div className="start-hero">
+          <div className="mark">🛰</div>
+          <h1>Resonance — AI Incident Commander</h1>
+          <p>
+            It listens to an incident — by voice or text — and keeps a live, evidence-backed
+            record of what's actually known versus what's still a guess. Pick how to start below.
+          </p>
+        </div>
+
+        <div className="start-cards">
+          <div className="start-card">
+            <div className="kicker">Option A</div>
+            <h2>Start a real incident</h2>
+            <p className="desc">
+              A blank incident you narrate yourself — type what's happening below, or speak to a
+              live AI voice agent once it's open.
+            </p>
+            <div className="fields">
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Incident title"
+              />
+              <select value={severity} onChange={(e) => setSeverity(e.target.value as IncidentSeverity)}>
+                {SEVERITIES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="start-card-spacer"></div>
+            <button className="btn" disabled={busy || !title.trim()} onClick={handleCreate} data-testid="btn-create-incident">
+              {busy ? 'Creating…' : 'Create Incident'}
+            </button>
+          </div>
+
+          <div className="start-card">
+            <div className="kicker">Option B</div>
+            <h2>Run the guided demo</h2>
+            <p className="desc">
+              A scripted, 9-step walkthrough of a realistic incident — powered by the real
+              backend, not fake data. Nothing to type, pausable anytime. Good for a first look.
+            </p>
+            <div className="start-card-spacer"></div>
+            <button className="btn secondary" disabled={busy} onClick={handleRunDemo} data-testid="btn-run-demo">
+              ▶ Run Backend Demo
+            </button>
+          </div>
+        </div>
+
+        {error && <div className="start-error">{error}</div>}
       </div>
     </div>
   )
