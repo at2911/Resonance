@@ -1,23 +1,31 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { ApiError, endAgoraSession, speakAgoraSummary, startAgoraSession } from '../services/api'
 import type { StartSessionResponse } from '../types/api'
 
-/** Starts/stops a real Agora Conversational AI session for this incident.
- * ASR/LLM/TTS config is built entirely server-side (app/services/agora/
- * agent_config.py) — no secret ever passes through this component or the
- * network to the browser beyond the RTC token, which is meant to be
- * shared with whoever is joining the call.
- *
- * This does NOT embed an audio/RTC call UI — joining the returned channel
- * requires an Agora-compatible client (Agora's own web demo, Studio's
- * test-call feature, or a mobile/web app using the Agora SDK). Building
- * that client is out of scope here; this component's job is only to
- * start the agent and hand over what's needed to join it. */
+// Loaded globally by index.html (AgoraRTC_N-4.24.8.js) — not an npm
+// import, so it's declared ambient here rather than typed properly.
+declare const AgoraRTC: any
+
+/** Starts/stops a real Agora Conversational AI session for this incident,
+ * AND lets a real human join that same voice channel directly from this
+ * panel — using the real Agora Web SDK (rtc mode, the correct mode for a
+ * two-way conversation, not "live"/broadcast mode), not a separate
+ * external client or a manually copy-pasted token. ASR/LLM/TTS config is
+ * built entirely server-side (app/services/agora/agent_config.py); the
+ * only thing that reaches the browser is the RTC token and App ID, both
+ * meant to be used by whoever is joining the call — the App ID
+ * specifically is not a secret, unlike AGORA_APP_CERTIFICATE/
+ * CUSTOMER_SECRET, which never leave the backend. */
 export function AgoraControls({ incidentId }: { incidentId: string }) {
   const [session, setSession] = useState<StartSessionResponse | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [spokenText, setSpokenText] = useState<string | null>(null)
+  const [joined, setJoined] = useState(false)
+  const [muted, setMuted] = useState(false)
+
+  const clientRef = useRef<any>(null)
+  const trackRef = useRef<any>(null)
 
   async function handleStart() {
     setBusy(true)
@@ -32,11 +40,28 @@ export function AgoraControls({ incidentId }: { incidentId: string }) {
     }
   }
 
+  async function leaveCallIfJoined() {
+    if (!joined) return
+    try {
+      if (trackRef.current) {
+        trackRef.current.close()
+        trackRef.current = null
+      }
+      if (clientRef.current) {
+        await clientRef.current.leave()
+      }
+    } finally {
+      setJoined(false)
+      setMuted(false)
+    }
+  }
+
   async function handleEnd() {
     if (!session) return
     setBusy(true)
     setError(null)
     try {
+      await leaveCallIfJoined()
       await endAgoraSession(incidentId, session.session.id)
       setSession(null)
       setSpokenText(null)
@@ -61,6 +86,58 @@ export function AgoraControls({ incidentId }: { incidentId: string }) {
     }
   }
 
+  async function handleJoinCall() {
+    if (!session) return
+    if (typeof AgoraRTC === 'undefined') {
+      setError('Voice SDK failed to load — check your connection and reload the page.')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' })
+      client.on('user-published', async (user: any, mediaType: string) => {
+        if (mediaType === 'audio') {
+          await client.subscribe(user, mediaType)
+          user.audioTrack.play()
+        }
+      })
+      clientRef.current = client
+
+      const uid = Math.floor(Math.random() * 90000) + 10000
+      await client.join(session.app_id, session.session.channel, session.rtc_token, uid)
+
+      const track = await AgoraRTC.createMicrophoneAudioTrack()
+      trackRef.current = track
+      await client.publish([track])
+
+      setJoined(true)
+    } catch (e) {
+      setError(e instanceof Error ? `Could not join the call: ${e.message}` : 'Could not join the call')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleLeaveCall() {
+    setBusy(true)
+    setError(null)
+    try {
+      await leaveCallIfJoined()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not leave the call')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function handleToggleMute() {
+    if (!trackRef.current) return
+    const next = !muted
+    trackRef.current.setEnabled(!next)
+    setMuted(next)
+  }
+
   return (
     <div className="panel" data-testid="agora-controls">
       <h2>AI Incident Commander (Agora)</h2>
@@ -80,37 +157,33 @@ export function AgoraControls({ incidentId }: { incidentId: string }) {
             <div style={{ fontSize: 12.5, lineHeight: 1.7 }}>
               <div>
                 Status: <span className="status-chip" data-testid="agora-session-status">{session.session.status}</span>
+                {joined && (
+                  <span className="status-chip" style={{ marginLeft: 6, background: '#12331f', color: 'var(--fact)' }} data-testid="agora-call-connected">
+                    🎙 You're connected
+                  </span>
+                )}
               </div>
               <div>
                 Channel: <code data-testid="agora-channel">{session.session.channel}</code>
               </div>
               {session.session.agent_id && <div>Agent ID: <code>{session.session.agent_id}</code></div>}
             </div>
-            <div style={{ marginTop: 8 }}>
-              <div style={{ color: 'var(--dim)', fontSize: 11 }}>
-                Join this channel from an Agora-compatible client (e.g. Agora's web demo or Studio
-                test call) using the channel name above and this token:
-              </div>
-              <textarea
-                readOnly
-                value={session.rtc_token}
-                data-testid="agora-rtc-token"
-                style={{
-                  width: '100%',
-                  marginTop: 4,
-                  background: 'var(--panel2)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text)',
-                  borderRadius: 6,
-                  padding: 6,
-                  fontSize: 10.5,
-                  fontFamily: 'monospace',
-                  resize: 'vertical',
-                }}
-                rows={2}
-              />
-            </div>
-            <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+
+            <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {!joined ? (
+                <button className="btn" disabled={busy} onClick={handleJoinCall} data-testid="btn-agora-join-call">
+                  {busy ? 'Joining…' : '🎧 Join Call'}
+                </button>
+              ) : (
+                <>
+                  <button className="btn secondary small" disabled={busy} onClick={handleToggleMute} data-testid="btn-agora-mute">
+                    {muted ? '🔇 Unmute' : '🎤 Mute'}
+                  </button>
+                  <button className="btn reject small" disabled={busy} onClick={handleLeaveCall} data-testid="btn-agora-leave-call">
+                    Leave Call
+                  </button>
+                </>
+              )}
               <button className="btn secondary small" disabled={busy} onClick={handleSpeak} data-testid="btn-agora-speak-summary">
                 🔊 Speak Summary
               </button>
@@ -118,6 +191,14 @@ export function AgoraControls({ incidentId }: { incidentId: string }) {
                 End Session
               </button>
             </div>
+
+            {!joined && (
+              <div style={{ color: 'var(--dim)', fontSize: 11, marginTop: 6 }}>
+                Click Join Call to talk to the AI incident commander directly from this browser —
+                it'll ask for microphone access.
+              </div>
+            )}
+
             {spokenText && (
               <div className="evidence" style={{ marginTop: 6 }} data-testid="agora-spoken-text">
                 Asked the agent to say: “{spokenText}”

@@ -314,6 +314,7 @@ export interface AgoraSession {
 export interface StartSessionResponse {
   session: AgoraSession
   rtc_token: string
+  app_id: string
 }
 
 export interface SpeakSummaryResponse {

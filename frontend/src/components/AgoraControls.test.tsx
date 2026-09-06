@@ -29,11 +29,34 @@ function session(): StartSessionResponse {
       ended_at: null,
     },
     rtc_token: 'fake-rtc-token-value',
+    app_id: 'fake-app-id',
   }
+}
+
+// jsdom has no real WebRTC/microphone — AgoraRTC is loaded globally by
+// index.html in the real app, so tests stand in a minimal fake matching
+// the same shape (createClient/join/publish/createMicrophoneAudioTrack)
+// AgoraControls actually calls, at the same boundary voice-test-client.html
+// was manually verified against.
+function installFakeAgoraRTC() {
+  const client = {
+    on: vi.fn(),
+    join: vi.fn().mockResolvedValue(undefined),
+    publish: vi.fn().mockResolvedValue(undefined),
+    leave: vi.fn().mockResolvedValue(undefined),
+    subscribe: vi.fn().mockResolvedValue(undefined),
+  }
+  const track = { close: vi.fn(), setEnabled: vi.fn() }
+  ;(globalThis as any).AgoraRTC = {
+    createClient: vi.fn(() => client),
+    createMicrophoneAudioTrack: vi.fn().mockResolvedValue(track),
+  }
+  return { client, track }
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  delete (globalThis as any).AgoraRTC
 })
 
 describe('AgoraControls', () => {
@@ -43,7 +66,7 @@ describe('AgoraControls', () => {
     expect(screen.queryByTestId('agora-session-status')).not.toBeInTheDocument()
   })
 
-  it('starting a session shows the real channel, status, and RTC token returned by the backend', async () => {
+  it('starting a session shows the real channel and status, and offers Join Call', async () => {
     const api = await import('../services/api')
     vi.mocked(api.startAgoraSession).mockResolvedValue(session())
 
@@ -54,8 +77,88 @@ describe('AgoraControls', () => {
       expect(screen.getByTestId('agora-session-status')).toHaveTextContent('ACTIVE')
     })
     expect(screen.getByTestId('agora-channel')).toHaveTextContent('incident-abc123')
-    expect(screen.getByTestId('agora-rtc-token')).toHaveValue('fake-rtc-token-value')
+    expect(screen.getByTestId('btn-agora-join-call')).toBeInTheDocument()
     expect(screen.queryByTestId('btn-agora-start')).not.toBeInTheDocument()
+  })
+
+  it('Join Call uses the real session channel/token/app_id to join, then shows Mute and Leave Call', async () => {
+    const { client, track } = installFakeAgoraRTC()
+    const api = await import('../services/api')
+    vi.mocked(api.startAgoraSession).mockResolvedValue(session())
+
+    render(<AgoraControls incidentId="inc-1" />)
+    fireEvent.click(screen.getByTestId('btn-agora-start'))
+    await screen.findByTestId('btn-agora-join-call')
+
+    fireEvent.click(screen.getByTestId('btn-agora-join-call'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('agora-call-connected')).toBeInTheDocument()
+    })
+    expect(client.join).toHaveBeenCalledWith('fake-app-id', 'incident-abc123', 'fake-rtc-token-value', expect.any(Number))
+    expect(client.publish).toHaveBeenCalledWith([track])
+    expect(screen.getByTestId('btn-agora-mute')).toBeInTheDocument()
+    expect(screen.getByTestId('btn-agora-leave-call')).toBeInTheDocument()
+    expect(screen.queryByTestId('btn-agora-join-call')).not.toBeInTheDocument()
+  })
+
+  it('Mute toggles the local track without leaving the call', async () => {
+    const { track } = installFakeAgoraRTC()
+    const api = await import('../services/api')
+    vi.mocked(api.startAgoraSession).mockResolvedValue(session())
+
+    render(<AgoraControls incidentId="inc-1" />)
+    fireEvent.click(screen.getByTestId('btn-agora-start'))
+    await screen.findByTestId('btn-agora-join-call')
+    fireEvent.click(screen.getByTestId('btn-agora-join-call'))
+    await screen.findByTestId('btn-agora-mute')
+
+    fireEvent.click(screen.getByTestId('btn-agora-mute'))
+
+    expect(track.setEnabled).toHaveBeenCalledWith(false)
+    expect(screen.getByTestId('btn-agora-mute')).toHaveTextContent('Unmute')
+    expect(screen.getByTestId('agora-call-connected')).toBeInTheDocument()
+  })
+
+  it('Leave Call disconnects but keeps the Agora session itself running', async () => {
+    const { client, track } = installFakeAgoraRTC()
+    const api = await import('../services/api')
+    vi.mocked(api.startAgoraSession).mockResolvedValue(session())
+
+    render(<AgoraControls incidentId="inc-1" />)
+    fireEvent.click(screen.getByTestId('btn-agora-start'))
+    await screen.findByTestId('btn-agora-join-call')
+    fireEvent.click(screen.getByTestId('btn-agora-join-call'))
+    await screen.findByTestId('btn-agora-leave-call')
+
+    fireEvent.click(screen.getByTestId('btn-agora-leave-call'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('btn-agora-join-call')).toBeInTheDocument()
+    })
+    expect(track.close).toHaveBeenCalled()
+    expect(client.leave).toHaveBeenCalled()
+    expect(screen.getByTestId('agora-session-status')).toHaveTextContent('ACTIVE')
+    expect(api.endAgoraSession).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a real join failure (e.g. mic permission denied) instead of pretending it connected', async () => {
+    const { client } = installFakeAgoraRTC()
+    client.join.mockRejectedValue(new Error('Permission denied'))
+    const api = await import('../services/api')
+    vi.mocked(api.startAgoraSession).mockResolvedValue(session())
+
+    render(<AgoraControls incidentId="inc-1" />)
+    fireEvent.click(screen.getByTestId('btn-agora-start'))
+    await screen.findByTestId('btn-agora-join-call')
+
+    fireEvent.click(screen.getByTestId('btn-agora-join-call'))
+
+    await waitFor(() => {
+      expect(screen.getByText(/Could not join the call/)).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('btn-agora-join-call')).toBeInTheDocument()
+    expect(screen.queryByTestId('agora-call-connected')).not.toBeInTheDocument()
   })
 
   it('surfaces a real backend error (e.g. Gemini not configured) instead of pretending to start', async () => {

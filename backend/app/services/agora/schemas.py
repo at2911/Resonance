@@ -168,6 +168,11 @@ class StartSessionResponse(BaseModel):
     session: AgoraSession
     rtc_token: str
     """Token for a human participant client to join the same channel."""
+    app_id: str
+    """Not a secret (unlike AGORA_APP_CERTIFICATE/CUSTOMER_SECRET) — this
+    is the same App ID every Agora client-side SDK call requires, sent
+    here so the dashboard itself can join the channel directly rather
+    than requiring a separately-configured external client."""
 
 
 class SpeakSummaryResponse(BaseModel):

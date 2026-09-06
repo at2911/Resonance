@@ -5,6 +5,12 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Resonance — Incident Commander</title>
+    <!-- Agora Web SDK — lets the dashboard itself join the live voice
+         channel (AgoraControls.tsx), instead of requiring a separate
+         external client. The App ID used with it is not a secret (unlike
+         AGORA_APP_CERTIFICATE/CUSTOMER_SECRET) — it's meant to travel to
+         the browser, same as any client-side Agora integration. -->
+    <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.24.8.js"></script>
   </head>
   <body>
     <div id="root"></div>

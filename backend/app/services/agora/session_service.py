@@ -45,6 +45,7 @@ def start_session(
 ) -> StartSessionResponse:
     # Validates the incident exists before touching any external service.
     state_service.get(incident_id)
+    resolved_settings = settings or get_settings()
 
     channel = req.channel or f"incident-{incident_id[:16]}"
     session = AgoraSession(
@@ -68,7 +69,7 @@ def start_session(
     # tests) never has to have GEMINI_API_KEY configured.
     needs_defaults = req.asr is None or req.llm is None or req.tts is None
     try:
-        defaults = build_default_agent_properties(settings or get_settings()) if needs_defaults else {}
+        defaults = build_default_agent_properties(resolved_settings) if needs_defaults else {}
     except AgentConfigError:
         session.status = AgoraSessionStatus.FAILED
         agora_repo.save_session(session)
@@ -103,7 +104,7 @@ def start_session(
         + (f" (agent_id={session.agent_id})" if session.agent_id else ""),
     )
 
-    return StartSessionResponse(session=session, rtc_token=human_token)
+    return StartSessionResponse(session=session, rtc_token=human_token, app_id=resolved_settings.agora_app_id)
 
 
 def end_session(
