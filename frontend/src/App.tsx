@@ -4,6 +4,19 @@ import { Dashboard } from './pages/Dashboard'
 import { ApiError, createIncident, startDemo } from './services/api'
 import type { IncidentSeverity } from './types/api'
 
+/** The whole point of a shared incident: whoever creates it can send the
+ * URL itself to teammates, and they land on the exact same dashboard and
+ * the exact same live Agora session — instead of each person creating
+ * their own separate incident. */
+function incidentIdFromUrl(): string | null {
+  return new URLSearchParams(window.location.search).get('incident')
+}
+
+function setIncidentInUrl(id: string | null): void {
+  const url = id ? `${window.location.pathname}?incident=${id}` : window.location.pathname
+  window.history.replaceState(null, '', url)
+}
+
 const SEVERITIES: IncidentSeverity[] = ['SEV1', 'SEV2', 'SEV3', 'SEV4', 'UNKNOWN']
 
 function CreateIncidentScreen({
@@ -105,21 +118,28 @@ function CreateIncidentScreen({
 }
 
 export default function App() {
-  const [incidentId, setIncidentId] = useState<string | null>(null)
+  const [incidentId, setIncidentId] = useState<string | null>(incidentIdFromUrl)
   const [demoActive, setDemoActive] = useState(false)
 
+  function handleCreated(id: string) {
+    setIncidentInUrl(id)
+    setIncidentId(id)
+  }
+
   function handleDemoStarted(id: string) {
+    setIncidentInUrl(id)
     setIncidentId(id)
     setDemoActive(true)
   }
 
   function handleDemoReset() {
+    setIncidentInUrl(null)
     setIncidentId(null)
     setDemoActive(false)
   }
 
   if (!incidentId) {
-    return <CreateIncidentScreen onCreated={setIncidentId} onDemoStarted={handleDemoStarted} />
+    return <CreateIncidentScreen onCreated={handleCreated} onDemoStarted={handleDemoStarted} />
   }
 
   return (

@@ -142,6 +142,23 @@ describe('AgoraControls', () => {
     expect(api.endAgoraSession).not.toHaveBeenCalled()
   })
 
+  it('refuses to hand the SDK a missing app_id and shows a clear message instead of crashing', async () => {
+    installFakeAgoraRTC()
+    const api = await import('../services/api')
+    vi.mocked(api.startAgoraSession).mockResolvedValue({ ...session(), app_id: '' })
+
+    render(<AgoraControls incidentId="inc-1" />)
+    fireEvent.click(screen.getByTestId('btn-agora-start'))
+    await screen.findByTestId('btn-agora-join-call')
+
+    fireEvent.click(screen.getByTestId('btn-agora-join-call'))
+
+    await waitFor(() => {
+      expect(screen.getByText(/missing what it needs to join/)).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('agora-call-connected')).not.toBeInTheDocument()
+  })
+
   it('surfaces a real join failure (e.g. mic permission denied) instead of pretending it connected', async () => {
     const { client } = installFakeAgoraRTC()
     client.join.mockRejectedValue(new Error('Permission denied'))

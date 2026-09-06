@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { Incident } from '../types/api'
 
 function elapsed(startIso: string): string {
@@ -9,6 +10,19 @@ function elapsed(startIso: string): string {
 }
 
 export function IncidentHeader({ incident }: { incident: Incident }) {
+  const [copied, setCopied] = useState(false)
+
+  async function handleCopyLink() {
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // clipboard access can be blocked in some contexts — the URL is
+      // still sitting in the address bar either way, nothing to recover
+    }
+  }
+
   return (
     <header
       style={{
@@ -31,6 +45,15 @@ export function IncidentHeader({ incident }: { incident: Incident }) {
       <span style={{ color: 'var(--dim)', fontSize: 12 }} data-testid="incident-elapsed">
         started {elapsed(incident.start_time)} ago
       </span>
+      <button
+        className="btn secondary small"
+        style={{ marginLeft: 'auto' }}
+        onClick={handleCopyLink}
+        data-testid="btn-copy-share-link"
+        title="Copy a link teammates can open to join this exact incident and call"
+      >
+        {copied ? '✓ Copied' : '🔗 Copy Team Link'}
+      </button>
     </header>
   )
 }

@@ -92,6 +92,10 @@ export function AgoraControls({ incidentId }: { incidentId: string }) {
       setError('Voice SDK failed to load — check your connection and reload the page.')
       return
     }
+    if (!session.app_id || !session.session.channel || !session.rtc_token) {
+      setError('This session is missing what it needs to join (app ID, channel, or token) — click End Session and Start again.')
+      return
+    }
     setBusy(true)
     setError(null)
     try {
