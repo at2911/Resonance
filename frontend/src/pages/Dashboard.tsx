@@ -22,7 +22,7 @@ import {
 } from '../services/api'
 import type { ExternalAction, ParticipantRole } from '../types/api'
 
-export function Dashboard({ incidentId }: { incidentId: string }) {
+export function Dashboard({ incidentId, onGoHome }: { incidentId: string; onGoHome?: () => void }) {
   const { incident, clarity, error, refresh } = useIncident(incidentId)
   const [openApprovalId, setOpenApprovalId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -152,7 +152,7 @@ export function Dashboard({ incidentId }: { incidentId: string }) {
 
   return (
     <div>
-      <IncidentHeader incident={incident} />
+      <IncidentHeader incident={incident} onGoHome={onGoHome} />
 
       {banner && (
         <div style={{ background: '#3a1c1c', color: '#ff8080', padding: '8px 20px', fontSize: 12.5 }}>{banner}</div>

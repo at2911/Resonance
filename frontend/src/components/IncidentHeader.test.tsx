@@ -29,6 +29,22 @@ beforeEach(() => {
   Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } })
 })
 
+describe('IncidentHeader — Home button', () => {
+  it('is not shown when onGoHome is not provided', () => {
+    render(<IncidentHeader incident={makeIncident()} />)
+    expect(screen.queryByTestId('btn-go-home')).not.toBeInTheDocument()
+  })
+
+  it('calls onGoHome when clicked', () => {
+    const onGoHome = vi.fn()
+    render(<IncidentHeader incident={makeIncident()} onGoHome={onGoHome} />)
+
+    fireEvent.click(screen.getByTestId('btn-go-home'))
+
+    expect(onGoHome).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('IncidentHeader — Copy Team Link', () => {
   it('copies the current page URL so a teammate lands on this exact incident', async () => {
     render(<IncidentHeader incident={makeIncident()} />)

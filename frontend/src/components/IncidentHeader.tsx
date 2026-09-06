@@ -9,7 +9,7 @@ function elapsed(startIso: string): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`
 }
 
-export function IncidentHeader({ incident }: { incident: Incident }) {
+export function IncidentHeader({ incident, onGoHome }: { incident: Incident; onGoHome?: () => void }) {
   const [copied, setCopied] = useState(false)
 
   async function handleCopyLink() {
@@ -35,6 +35,16 @@ export function IncidentHeader({ incident }: { incident: Incident }) {
         flexWrap: 'wrap',
       }}
     >
+      {onGoHome && (
+        <button
+          className="btn secondary small"
+          onClick={onGoHome}
+          data-testid="btn-go-home"
+          title="Leave this incident and go back to the start screen"
+        >
+          ← Home
+        </button>
+      )}
       <h1 style={{ fontSize: 16, margin: 0 }}>{incident.title.toUpperCase()}</h1>
       <span className={`badge status-${incident.status}`} data-testid="incident-status">
         {incident.status}

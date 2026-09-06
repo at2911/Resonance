@@ -138,6 +138,12 @@ export default function App() {
     setDemoActive(false)
   }
 
+  function handleGoHome() {
+    setIncidentInUrl(null)
+    setIncidentId(null)
+    setDemoActive(false)
+  }
+
   if (!incidentId) {
     return <CreateIncidentScreen onCreated={handleCreated} onDemoStarted={handleDemoStarted} />
   }
@@ -145,7 +151,7 @@ export default function App() {
   return (
     <>
       {demoActive && <DemoControls onReset={handleDemoReset} />}
-      <Dashboard incidentId={incidentId} />
+      <Dashboard incidentId={incidentId} onGoHome={handleGoHome} />
     </>
   )
 }

@@ -3,7 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 
 vi.mock('./pages/Dashboard', () => ({
-  Dashboard: ({ incidentId }: { incidentId: string }) => <div data-testid="fake-dashboard">dashboard for {incidentId}</div>,
+  Dashboard: ({ incidentId, onGoHome }: { incidentId: string; onGoHome?: () => void }) => (
+    <div data-testid="fake-dashboard">
+      dashboard for {incidentId}
+      {onGoHome && (
+        <button data-testid="fake-go-home" onClick={onGoHome}>
+          home
+        </button>
+      )}
+    </div>
+  ),
 }))
 
 vi.mock('./services/api', () => ({
@@ -45,6 +54,17 @@ describe('App — shareable per-incident URLs (the "team call" fix)', () => {
 
     await screen.findByTestId('fake-dashboard')
     expect(window.location.search).toBe('?incident=new-incident-42')
+  })
+
+  it('going home from a shared/created incident clears the URL and returns to the start screen', async () => {
+    window.history.replaceState(null, '', '/?incident=shared-abc123')
+    render(<App />)
+    await screen.findByTestId('fake-dashboard')
+
+    fireEvent.click(screen.getByTestId('fake-go-home'))
+
+    expect(screen.getByTestId('btn-create-incident')).toBeInTheDocument()
+    expect(window.location.search).toBe('')
   })
 
   it('running the demo also writes its incident id into the URL', async () => {
